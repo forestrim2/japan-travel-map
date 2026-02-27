@@ -29,10 +29,33 @@ export default function MapView({
   onSelectPin,
   addMode,
   onMapPickForCreate,
-  flyTo, // {lat,lng,zoom, pinId?} | null
-  userLocation
+  flyTo, // {lat,lng,zoom, pinId?, t?} | null
+  userLocation,
+  sidebarOpenSignal // number that changes when sidebar opens/closes
 }) {
   const mapRef = useRef(null);
+
+  // 지도 크기 재계산(레이아웃 변경/모바일 드로어 열닫/리사이즈 대응)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const tick = () => {
+      try { map.invalidateSize(); } catch {}
+    };
+    tick();
+    const id = setTimeout(tick, 120);
+    return () => clearTimeout(id);
+  }, [sidebarOpenSignal]);
+
+  useEffect(() => {
+    const onResize = () => {
+      const map = mapRef.current;
+      if (!map) return;
+      try { map.invalidateSize(); } catch {}
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     if (!flyTo || !mapRef.current) return;
@@ -63,19 +86,14 @@ export default function MapView({
         <ClickCatcher enabled={addMode} onPick={onMapPickForCreate} />
 
         {userLocation ? (
-          <Marker
-            position={[userLocation.lat, userLocation.lng]}
-            eventHandlers={{ click: () => {} }}
-          />
+          <Marker position={[userLocation.lat, userLocation.lng]} />
         ) : null}
 
         {pins.map((p) => (
           <Marker
             key={p.id}
             position={[p.lat, p.lng]}
-            eventHandlers={{
-              click: () => onSelectPin(p.id)
-            }}
+            eventHandlers={{ click: () => onSelectPin(p.id) }}
           />
         ))}
       </MapContainer>
