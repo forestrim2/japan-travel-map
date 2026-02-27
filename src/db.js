@@ -8,6 +8,13 @@ db.version(1).stores({
   pins: "++id,cityId,themeId,name,lat,lng,createdAt,updatedAt"
 });
 
+// v2: schema 동일, 데이터 확장(photos를 dataUrl로 저장 등) - 마이그레이션 불필요
+db.version(2).stores({
+  cities: "++id,name,createdAt",
+  themes: "++id,cityId,name,createdAt",
+  pins: "++id,cityId,themeId,name,lat,lng,createdAt,updatedAt"
+});
+
 export async function ensureSeed() {
   const cityCount = await db.cities.count();
   if (cityCount > 0) return;
@@ -36,9 +43,36 @@ export async function addCity(name) {
   return await db.cities.add({ name, createdAt: now });
 }
 
+export async function renameCity(id, name) {
+  return await db.cities.update(id, { name });
+}
+
+export async function deleteCity(id) {
+  // 도시 삭제 시, 하위 테마/핀도 같이 삭제
+  await db.transaction("rw", db.cities, db.themes, db.pins, async () => {
+    const themeIds = (await db.themes.where("cityId").equals(id).toArray()).map(t => t.id);
+    await db.pins.where("cityId").equals(id).delete();
+    if (themeIds.length) {
+      await db.themes.where("cityId").equals(id).delete();
+    }
+    await db.cities.delete(id);
+  });
+}
+
 export async function addTheme(cityId, name) {
   const now = Date.now();
   return await db.themes.add({ cityId, name, createdAt: now });
+}
+
+export async function renameTheme(id, name) {
+  return await db.themes.update(id, { name });
+}
+
+export async function deleteTheme(id) {
+  await db.transaction("rw", db.themes, db.pins, async () => {
+    await db.pins.where("themeId").equals(id).delete();
+    await db.themes.delete(id);
+  });
 }
 
 export async function addPin(pin) {
@@ -53,27 +87,4 @@ export async function updatePin(id, patch) {
 
 export async function deletePin(id) {
   return await db.pins.delete(id);
-}
-
-export async function exportAll() {
-  const [cities, themes, pins] = await Promise.all([
-    db.cities.toArray(),
-    db.themes.toArray(),
-    db.pins.toArray()
-  ]);
-  return { version: 1, exportedAt: new Date().toISOString(), cities, themes, pins };
-}
-
-export async function importAll(payload) {
-  if (!payload || !payload.cities || !payload.themes || !payload.pins) {
-    throw new Error("형식이 올바르지 않습니다.");
-  }
-  await db.transaction("rw", db.cities, db.themes, db.pins, async () => {
-    await db.cities.clear();
-    await db.themes.clear();
-    await db.pins.clear();
-    await db.cities.bulkAdd(payload.cities);
-    await db.themes.bulkAdd(payload.themes);
-    await db.pins.bulkAdd(payload.pins);
-  });
 }

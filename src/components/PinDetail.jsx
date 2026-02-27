@@ -11,23 +11,21 @@ export default function PinDetail({
 }) {
   const [etaWalk, setEtaWalk] = useState(null);
   const [etaDrive, setEtaDrive] = useState(null);
-  const [etaErr, setEtaErr] = useState("");
 
   useEffect(() => {
     let alive = true;
     async function run() {
-      setEtaErr("");
       setEtaWalk(null);
       setEtaDrive(null);
       if (!userLocation) return;
       try {
         const w = await osrmRouteETA("walking", userLocation.lat, userLocation.lng, pin.lat, pin.lng);
         if (alive) setEtaWalk(w);
-      } catch (e) { if (alive) setEtaErr("ETA 계산 실패(도보)"); }
+      } catch {}
       try {
         const d = await osrmRouteETA("driving", userLocation.lat, userLocation.lng, pin.lat, pin.lng);
         if (alive) setEtaDrive(d);
-      } catch (e) { /* ignore */ }
+      } catch {}
     }
     run();
     return () => { alive = false; };
@@ -61,23 +59,14 @@ export default function PinDetail({
           <div>{pin.memo}</div>
         </div>
 
-        {pin.tags?.length ? (
-          <div className="kv">
-            <label>태그</label>
-            <div className="inlineBtns">
-              {pin.tags.map((t, i) => <span key={i} className="chip" style={{cursor:"default"}}>{t}</span>)}
-            </div>
-          </div>
-        ) : null}
-
         {pin.photos?.length ? (
           <div className="kv">
-            <label>사진 URL</label>
+            <label>사진</label>
             {pin.photos.map((p, i) => (
-              <a key={i} className="resultItem" href={p} target="_blank" rel="noreferrer">
-                <div className="resultTitle">사진 {i+1}</div>
-                <div className="resultSub">{p}</div>
-              </a>
+              <div key={i} className="resultItem">
+                <div className="resultTitle">{p.name || `사진 ${i+1}`}</div>
+                <img src={p.dataUrl} alt={p.name || ""} style={{ width: "100%", borderRadius: 12, border: "1px solid var(--line)" }} />
+              </div>
             ))}
           </div>
         ) : null}
@@ -100,13 +89,8 @@ export default function PinDetail({
           <label>이동</label>
           {userLocation ? (
             <>
-              <div className="small">
-                도보 ETA: {etaWalk ? formatETA(etaWalk.seconds) : "계산 중…"}
-              </div>
-              <div className="small">
-                차량 ETA: {etaDrive ? formatETA(etaDrive.seconds) : "계산 중…"}
-              </div>
-              {etaErr ? <div className="small">{etaErr}</div> : null}
+              <div className="small">도보 ETA: {etaWalk ? formatETA(etaWalk.seconds) : "계산 중…"}</div>
+              <div className="small">차량 ETA: {etaDrive ? formatETA(etaDrive.seconds) : "계산 중…"}</div>
             </>
           ) : (
             <div className="small">내 위치를 켜면 ETA가 표시됩니다.</div>

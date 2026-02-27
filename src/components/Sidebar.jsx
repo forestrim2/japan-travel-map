@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 
 export default function Sidebar({
   cities,
@@ -8,12 +8,17 @@ export default function Sidebar({
   selectedThemeId,
   setSelectedCityId,
   setSelectedThemeId,
+  expandedCityIds,
+  toggleCityExpanded,
   onAddCity,
   onAddTheme,
-  onExport,
-  onImportClick,
+  onRenameCity,
+  onDeleteCity,
+  onRenameTheme,
+  onDeleteTheme,
   searchQuery,
   setSearchQuery,
+  onRunSearch,
   searchResults,
   onPickSearchResult,
   localResults,
@@ -47,9 +52,13 @@ export default function Sidebar({
           className="searchInput"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="장소/주소 검색…"
+          placeholder="장소/주소/상호 검색…"
         />
-        <div className="small">Enter로 검색 · 결과 클릭 시 지도 이동/저장</div>
+        <div className="row">
+          <button className="btn btnPrimary" onClick={onRunSearch}>검색</button>
+          <button className="btn btnGhost" onClick={() => setSearchQuery("")}>초기화</button>
+        </div>
+        <div className="small">검색 결과 클릭 → 지도 이동 + 바로 저장</div>
       </div>
 
       <div className="sidebarBody">
@@ -63,7 +72,7 @@ export default function Sidebar({
                 onClick={() => onPickSearchResult(r)}
                 title="클릭: 지도 이동 + 핀 저장"
               >
-                <div className="resultTitle">{r.display_name.split(",")[0]}</div>
+                <div className="resultTitle">{(r.name || r.display_name || "").split(",")[0]}</div>
                 <div className="resultSub">{r.display_name}</div>
               </div>
             ))}
@@ -92,26 +101,35 @@ export default function Sidebar({
         <div className="sectionTitle">폴더 (도시 &gt; 테마)</div>
 
         {cities.map((c) => {
-          const isCityActive = selectedCityId === c.id;
+          const isExpanded = expandedCityIds.has(c.id);
           const cityThemes = themesByCity.get(c.id) || [];
           return (
             <div key={c.id}>
               <div
-                className={`treeItem ${isCityActive ? "active" : ""}`}
+                className={`treeItem ${(selectedCityId === c.id && selectedThemeId === null) ? "active" : ""}`}
                 onClick={() => {
                   setSelectedCityId(c.id);
                   setSelectedThemeId(null);
                 }}
               >
-                <span>{c.name}</span>
-                <span className="badge">{cityThemes.length}</span>
+                <span onClick={(e) => { e.stopPropagation(); toggleCityExpanded(c.id); }}>
+                  {isExpanded ? "▾ " : "▸ "}{c.name}
+                </span>
+                <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <span className="badge">{cityThemes.length}</span>
+                  <button className="chip" onClick={(e) => { e.stopPropagation(); onRenameCity(c); }}>이름</button>
+                  <button className="chip" onClick={(e) => { e.stopPropagation(); onDeleteCity(c); }}>삭제</button>
+                </span>
               </div>
 
-              {isCityActive ? (
+              {isExpanded ? (
                 <div className="treeIndent">
                   <div
-                    className={`treeItem ${selectedThemeId === null ? "active" : ""}`}
-                    onClick={() => setSelectedThemeId(null)}
+                    className={`treeItem ${(selectedCityId === c.id && selectedThemeId === null) ? "active" : ""}`}
+                    onClick={() => {
+                      setSelectedCityId(c.id);
+                      setSelectedThemeId(null);
+                    }}
                   >
                     <span>전체</span>
                     <span className="badge">
@@ -120,19 +138,32 @@ export default function Sidebar({
                   </div>
 
                   {cityThemes.map((t) => {
-                    const isThemeActive = selectedThemeId === t.id;
+                    const isActive = selectedCityId === t.cityId && selectedThemeId === t.id;
                     const cnt = pinCountByTheme.get(`${t.cityId}:${t.id}`) || 0;
                     return (
                       <div
                         key={t.id}
-                        className={`treeItem ${isThemeActive ? "active" : ""}`}
-                        onClick={() => setSelectedThemeId(t.id)}
+                        className={`treeItem ${isActive ? "active" : ""}`}
+                        onClick={() => {
+                          setSelectedCityId(t.cityId);
+                          setSelectedThemeId(t.id);
+                        }}
                       >
                         <span>{t.name}</span>
-                        <span className="badge">{cnt}</span>
+                        <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <span className="badge">{cnt}</span>
+                          <button className="chip" onClick={(e) => { e.stopPropagation(); onRenameTheme(t); }}>이름</button>
+                          <button className="chip" onClick={(e) => { e.stopPropagation(); onDeleteTheme(t); }}>삭제</button>
+                        </span>
                       </div>
                     );
                   })}
+
+                  <div style={{ margin: "8px 0 12px 0" }}>
+                    <button className="btn btnGhost" style={{ width: "100%" }} onClick={() => onAddTheme(c.id)}>
+                      + 테마 추가
+                    </button>
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -141,19 +172,8 @@ export default function Sidebar({
       </div>
 
       <div className="sidebarFooter">
-        <div className="row">
-          <button className="btn btnGhost" onClick={onAddCity}>+ 도시</button>
-          <button className="btn btnGhost" onClick={onAddTheme} disabled={!selectedCityId}>
-            + 테마
-          </button>
-        </div>
-        <div className="row">
-          <button className="btn btnGhost" onClick={onExport}>내보내기</button>
-          <button className="btn btnGhost" onClick={onImportClick}>가져오기</button>
-        </div>
-        <div className="small">
-          데이터는 이 브라우저(기기)에만 저장됩니다.
-        </div>
+        <button className="btn btnGhost" onClick={onAddCity}>+ 도시 추가</button>
+        <div className="small">데이터는 이 브라우저(기기)에만 저장됩니다.</div>
       </div>
     </aside>
   );
