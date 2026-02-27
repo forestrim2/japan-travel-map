@@ -79,7 +79,7 @@ export default function PinEditor({
         </div>
 
         <div className="kv">
-          <label>가게명 </label> (필수)</label>
+          <label>이름(상호) (필수)</label>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="기본값은 자동으로 채워집니다." />
         </div>
 
@@ -106,7 +106,7 @@ export default function PinEditor({
         <div className="hr" />
 
         <div className="kv">
-          <label>링크(리뷰/구글맵/인스타 등) </label>
+          <label>링크(리뷰/구글맵/인스타 등) 여러 개</label>
           <div className="inlineBtns">
             <button className="chip" onClick={addLink}>+ 링크 추가</button>
           </div>
@@ -128,7 +128,7 @@ export default function PinEditor({
         <div className="hr" />
 
         <div className="kv">
-          <label>사진 업로드(캡쳐 등) </label>
+          <label>사진 업로드(캡쳐 등) 여러 장</label>
           <div className="inlineBtns">
             <button className="chip" onClick={() => fileRef.current?.click()}>+ 사진 추가</button>
             {photos.length ? <button className="chip" onClick={() => setPhotos([])}>전체 삭제</button> : null}

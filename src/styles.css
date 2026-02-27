@@ -173,3 +173,37 @@ button{font-family:inherit;}
   .app{grid-template-columns:1fr;}
   .sidebar{display:none;}
 }
+
+
+.iconBtn{
+  width:34px;
+  height:34px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  background:#fff;
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+  padding:0;
+}
+.iconBtn:hover{background:#f6f6f6;}
+.icon{
+  font-size:16px;
+  line-height:1;
+}
+.count{
+  font-size:12px;
+  color:var(--muted);
+  margin-left:6px;
+}
+.treeLeft{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+}
+.treeName{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}

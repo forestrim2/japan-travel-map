@@ -36,6 +36,12 @@ export default function Sidebar({
     return m;
   }, [themes]);
 
+  const pinCountByCity = useMemo(() => {
+    const m = new Map();
+    for (const p of pins) m.set(p.cityId, (m.get(p.cityId) || 0) + 1);
+    return m;
+  }, [pins]);
+
   const pinCountByTheme = useMemo(() => {
     const m = new Map();
     for (const p of pins) {
@@ -103,6 +109,8 @@ export default function Sidebar({
         {cities.map((c) => {
           const isExpanded = expandedCityIds.has(c.id);
           const cityThemes = themesByCity.get(c.id) || [];
+          const cityPinCnt = pinCountByCity.get(c.id) || 0;
+
           return (
             <div key={c.id}>
               <div
@@ -112,34 +120,30 @@ export default function Sidebar({
                   setSelectedThemeId(null);
                 }}
               >
-                <span onClick={(e) => { e.stopPropagation(); toggleCityExpanded(c.id); }}>
-                  {isExpanded ? "▾ " : "▸ "}{c.name}
+                <span className="treeLeft" onClick={(e) => { e.stopPropagation(); toggleCityExpanded(c.id); }}>
+                  <span>{isExpanded ? "▾" : "▸"}</span>
+                  <span className="treeName">{c.name}</span>
+                  <span className="count">({cityPinCnt})</span>
                 </span>
-                <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <span className="badge">{cityThemes.length}</span>
-                  <button className="chip" onClick={(e) => { e.stopPropagation(); onRenameCity(c); }}>이름</button>
-                  <button className="chip" onClick={(e) => { e.stopPropagation(); onDeleteCity(c); }}>삭제</button>
+
+                <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button className="iconBtn" aria-label="도시 이름 수정" title="이름 수정"
+                    onClick={(e) => { e.stopPropagation(); onRenameCity(c); }}>
+                    <span className="icon">✎</span>
+                  </button>
+                  <button className="iconBtn" aria-label="도시 삭제" title="삭제"
+                    onClick={(e) => { e.stopPropagation(); onDeleteCity(c); }}>
+                    <span className="icon">🗑</span>
+                  </button>
                 </span>
               </div>
 
               {isExpanded ? (
                 <div className="treeIndent">
-                  <div
-                    className={`treeItem ${(selectedCityId === c.id && selectedThemeId === null) ? "active" : ""}`}
-                    onClick={() => {
-                      setSelectedCityId(c.id);
-                      setSelectedThemeId(null);
-                    }}
-                  >
-                    <span>전체</span>
-                    <span className="badge">
-                      {pins.filter((p) => p.cityId === c.id).length}
-                    </span>
-                  </div>
-
                   {cityThemes.map((t) => {
                     const isActive = selectedCityId === t.cityId && selectedThemeId === t.id;
                     const cnt = pinCountByTheme.get(`${t.cityId}:${t.id}`) || 0;
+
                     return (
                       <div
                         key={t.id}
@@ -149,11 +153,20 @@ export default function Sidebar({
                           setSelectedThemeId(t.id);
                         }}
                       >
-                        <span>{t.name}</span>
-                        <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                          <span className="badge">{cnt}</span>
-                          <button className="chip" onClick={(e) => { e.stopPropagation(); onRenameTheme(t); }}>이름</button>
-                          <button className="chip" onClick={(e) => { e.stopPropagation(); onDeleteTheme(t); }}>삭제</button>
+                        <span className="treeLeft">
+                          <span className="treeName">{t.name}</span>
+                          <span className="count">({cnt})</span>
+                        </span>
+
+                        <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <button className="iconBtn" aria-label="테마 이름 수정" title="이름 수정"
+                            onClick={(e) => { e.stopPropagation(); onRenameTheme(t); }}>
+                            <span className="icon">✎</span>
+                          </button>
+                          <button className="iconBtn" aria-label="테마 삭제" title="삭제"
+                            onClick={(e) => { e.stopPropagation(); onDeleteTheme(t); }}>
+                            <span className="icon">🗑</span>
+                          </button>
                         </span>
                       </div>
                     );
