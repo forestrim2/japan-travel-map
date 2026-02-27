@@ -15,6 +15,7 @@ export default function PinEditor({
   const [themeId, setThemeId] = useState(initialPin.themeId ?? (themeList[0]?.id ?? null));
 
   useEffect(() => {
+    // 도시 변경 시 테마가 비면 첫 테마로
     if (themeId && themeList.some(t => t.id === themeId)) return;
     setThemeId(themeList[0]?.id ?? null);
   }, [cityId]);
@@ -26,9 +27,11 @@ export default function PinEditor({
 
   const [links, setLinks] = useState(safeArr(initialPin.links));
   const [photos, setPhotos] = useState(safeArr(initialPin.photos)); // [{name,dataUrl}]
+  const [tags, setTags] = useState((safeArr(initialPin.tags)).join(", "));
+
   const fileRef = useRef(null);
 
-  const canSave = name.trim() && cityId && themeId;
+  const canSave = name.trim() && cityId && themeId && memo.trim();
 
   const addLink = () => setLinks([...links, { title: "", url: "" }]);
 
@@ -59,7 +62,11 @@ export default function PinEditor({
       <div className="panelBody">
         <div className="kv">
           <label>도시(대분류)</label>
-          <select className="select" value={cityId ?? ""} onChange={(e) => setCityId(Number(e.target.value))}>
+          <select
+            className="select"
+            value={cityId ?? ""}
+            onChange={(e) => setCityId(Number(e.target.value))}
+          >
             {cities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
@@ -72,29 +79,34 @@ export default function PinEditor({
         </div>
 
         <div className="kv">
-          <label>거래처명</label>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="" />
+          <label>이름(상호) (필수)</label>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="기본값은 자동으로 채워집니다." />
         </div>
 
         <div className="kv">
-          <label>일본 주소</label>
-          <input className="input" value={addressJa} onChange={(e) => setAddressJa(e.target.value)} placeholder="" />
+          <label>주소 (일본어) 자동</label>
+          <input className="input" value={addressJa} onChange={(e) => setAddressJa(e.target.value)} placeholder="자동 입력(수정 가능)" />
         </div>
 
         <div className="kv">
-          <label>한국 주소</label>
-          <input className="input" value={addressKo} onChange={(e) => setAddressKo(e.target.value)} placeholder="" />
+          <label>주소 (한국어) 자동</label>
+          <input className="input" value={addressKo} onChange={(e) => setAddressKo(e.target.value)} placeholder="자동 입력(수정 가능)" />
         </div>
 
         <div className="kv">
-          <label>메모</label>
-          <textarea className="textarea" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="" />
+          <label>메모 (필수)</label>
+          <textarea className="textarea" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="왜 저장했는지, 먹을 메뉴, 주의사항…" />
+        </div>
+
+        <div className="kv">
+          <label>태그 (쉼표로 구분)</label>
+          <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="라멘, 카페, 야경" />
         </div>
 
         <div className="hr" />
 
         <div className="kv">
-          <label>링크</label>
+          <label>링크(리뷰/구글맵/인스타 등) 여러 개</label>
           <div className="inlineBtns">
             <button className="chip" onClick={addLink}>+ 링크 추가</button>
           </div>
@@ -102,7 +114,7 @@ export default function PinEditor({
             <div className="linkRow" key={idx}>
               <input className="input" value={l.title} onChange={(e) => {
                 const next = [...links]; next[idx] = { ...next[idx], title: e.target.value }; setLinks(next);
-              }} placeholder="제목" />
+              }} placeholder="제목(예: 구글맵)" />
               <input className="input" value={l.url} onChange={(e) => {
                 const next = [...links]; next[idx] = { ...next[idx], url: e.target.value }; setLinks(next);
               }} placeholder="URL" />
@@ -116,7 +128,7 @@ export default function PinEditor({
         <div className="hr" />
 
         <div className="kv">
-          <label>사진</label>
+          <label>사진 업로드(캡쳐 등) 여러 장</label>
           <div className="inlineBtns">
             <button className="chip" onClick={() => fileRef.current?.click()}>+ 사진 추가</button>
             {photos.length ? <button className="chip" onClick={() => setPhotos([])}>전체 삭제</button> : null}
@@ -157,7 +169,8 @@ export default function PinEditor({
               name: name.trim(),
               addressJa: addressJa.trim(),
               addressKo: addressKo.trim(),
-              memo: memo, // 공백 허용
+              memo: memo.trim(),
+              tags: tags.split(",").map(s => s.trim()).filter(Boolean),
               links: links.filter(l => (l.title?.trim() || l.url?.trim())).map(l => ({ title: l.title.trim(), url: l.url.trim() })),
               photos
             })}
