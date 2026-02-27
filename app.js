@@ -1,534 +1,483 @@
-(() => {
-  const STORAGE_KEY = "japan_travel_map_places_v1";
+const STORAGE_KEY = "japan-travel-map-places-v2";
+const el = (id) => document.getElementById(id);
 
-  const sheet = document.getElementById("sheet");
-  const sheetBody = document.getElementById("sheetBody");
-  const scrim = document.getElementById("scrim");
-  const toast = document.getElementById("toast");
-  const offlineBanner = document.getElementById("offlineBanner");
+const btnList = el("btnList");
+const btnMap  = el("btnMap");
+const mapView  = el("mapView");
+const listView = el("listView");
+const listEl   = el("list");
 
-  const btnLocate = document.getElementById("btnLocate");
-  const btnAddMode = document.getElementById("btnAddMode");
-  const btnListTab = document.getElementById("btnListTab");
-  const btnCloseSheet = document.getElementById("btnCloseSheet");
-  const tabMap = document.getElementById("tabMap");
-  const tabList = document.getElementById("tabList");
+const searchInput = el("searchInput");
+const btnSearch   = el("btnSearch");
 
-  const searchInput = document.getElementById("searchInput");
-  const btnClearSearch = document.getElementById("btnClearSearch");
+const btnLocate = el("btnLocate");
+const btnAdd    = el("btnAdd");
+const offlineBanner = el("offlineBanner");
 
-  let places = loadPlaces();
-  let mode = "browse"; // browse | add
-  let tempPin = null;
-  let tempLatLng = null;
-  let tempAddress = "";
-  let selectedId = null;
+// Sheet
+const sheetBackdrop = el("sheetBackdrop");
+const sheet = el("sheet");
+const sheetClose = el("sheetClose");
+const sheetTitle = el("sheetTitle");
+const addrText = el("addrText");
+const btnStreet = el("btnStreet");
+const btnCopy = el("btnCopy");
+const btnCancelAdd = el("btnCancelAdd");
+const btnConfirmAdd = el("btnConfirmAdd");
+const confirmRow = el("confirmRow");
 
-  let currentLocationMarker = null;
-  let currentAccuracyCircle = null;
+const placeForm = el("placeForm");
+const fName = el("fName");
+const fCat  = el("fCat");
+const fMemo = el("fMemo");
+const btnFormBack = el("btnFormBack");
 
-  const map = L.map("map", {
-    zoomControl: true,
-    doubleClickZoom: true,
-    tap: true,
-  });
+const btnExport = el("btnExport");
+const btnImport = el("btnImport");
+const importFile = el("importFile");
 
-  map.setView([35.681236, 139.767125], 6);
+let places = loadPlaces();
+let addMode = false;
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: "&copy; OpenStreetMap contributors",
-    updateWhenIdle: true,
-    keepBuffer: 2,
-  }).addTo(map);
+let map, markersLayer;
+let tempPin = null;
+let pendingLatLng = null;
+let pendingAddress = null;
 
-  const markers = L.layerGroup().addTo(map);
+// Current location indicator
+let currentCircle = null;
+let currentDot = null;
+let watchId = null;
+
+function setOnlineUI(){
+  const online = navigator.onLine;
+  offlineBanner.classList.toggle("hidden", online);
+}
+window.addEventListener("online", setOnlineUI);
+window.addEventListener("offline", setOnlineUI);
+setOnlineUI();
+
+// Views
+function showMap(){
+  mapView.classList.add("active");
+  listView.classList.remove("active");
+  btnMap.classList.add("active");
+  btnList.classList.remove("active");
+  setTimeout(() => map && map.invalidateSize(), 50);
+}
+function showList(){
+  mapView.classList.remove("active");
+  listView.classList.add("active");
+  btnMap.classList.remove("active");
+  btnList.classList.add("active");
+  renderList();
+}
+btnMap.addEventListener("click", showMap);
+btnList.addEventListener("click", showList);
+
+// Map init
+map = L.map("map", { zoomControl:true, doubleClickZoom:true })
+  .setView([35.681236, 139.767125], 11);
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: "&copy; OpenStreetMap contributors"
+}).addTo(map);
+
+markersLayer = L.layerGroup().addTo(map);
+renderMarkers();
+
+// Add-mode click
+map.on("click", async (e) => {
+  if (!addMode) return;
+
+  dropTempPin(e.latlng.lat, e.latlng.lng);
+
+  pendingLatLng = e.latlng;
+  pendingAddress = null;
+
+  openSheet({ title:"이 위치를 저장할까요?", address:"주소를 불러오는 중…", mode:"confirm" });
+
+  try{
+    const addr = await reverseGeocodeKo(e.latlng.lat, e.latlng.lng);
+    pendingAddress = addr;
+    addrText.textContent = addr || "(주소를 찾지 못했습니다)";
+  }catch(err){
+    addrText.textContent = "(주소를 불러오지 못했습니다)";
+  }
+});
+
+// Close sheet
+sheetBackdrop.addEventListener("click", closeSheet);
+sheetClose.addEventListener("click", closeSheet);
+
+// Add mode toggle
+btnAdd.addEventListener("click", () => {
+  addMode = !addMode;
+  btnAdd.textContent = addMode ? "＋ 추가중" : "＋";
+  btnAdd.classList.toggle("active", addMode);
+
+  if(!addMode){
+    clearTempPin();
+    closeSheet();
+  }else{
+    openSheet({ title:"추가 모드", address:"지도에서 위치를 한 번 클릭해 주세요.", mode:"hint" });
+  }
+});
+
+btnCancelAdd.addEventListener("click", () => {
+  clearTempPin();
+  pendingLatLng = null;
+  pendingAddress = null;
+  closeSheet();
+});
+
+btnConfirmAdd.addEventListener("click", () => {
+  if(!pendingLatLng) return;
+  sheetTitle.textContent = "장소 등록";
+  confirmRow.classList.add("hidden");
+  placeForm.classList.remove("hidden");
+  fName.value = "";
+  fMemo.value = "";
+  fCat.value = "food";
+  fName.focus();
+});
+
+btnFormBack.addEventListener("click", () => {
+  placeForm.classList.add("hidden");
+  confirmRow.classList.remove("hidden");
+  sheetTitle.textContent = "이 위치를 저장할까요?";
+});
+
+placeForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  if(!pendingLatLng) return;
+
+  const item = {
+    id: cryptoRandomId(),
+    name: (fName.value || "").trim() || "이름 없음",
+    cat: fCat.value,
+    memo: (fMemo.value || "").trim(),
+    lat: pendingLatLng.lat,
+    lng: pendingLatLng.lng,
+    addressKo: pendingAddress || "",
+    createdAt: Date.now()
+  };
+  places.unshift(item);
+  savePlaces(places);
+
+  addMode = false;
+  btnAdd.textContent = "＋";
+  btnAdd.classList.remove("active");
+
+  clearTempPin();
+  pendingLatLng = null;
+  pendingAddress = null;
+
+  closeSheet();
   renderMarkers();
+  showList();
+});
 
-  function setSheet(state) {
-    sheet.dataset.state = state; // closed | peek | open
-    const showScrim = state === "open";
-    scrim.classList.toggle("hidden", !showScrim);
+// Sheet helpers
+function openSheet({title, address, mode}){
+  sheetTitle.textContent = title;
+  addrText.textContent = address;
+
+  const isConfirm = (mode === "confirm");
+  const isHint = (mode === "hint");
+  const isView = (mode === "view");
+
+  btnStreet.classList.toggle("hidden", isHint);
+  btnCopy.classList.toggle("hidden", isHint);
+
+  confirmRow.classList.toggle("hidden", !(isConfirm));
+  placeForm.classList.add("hidden");
+
+  sheetBackdrop.classList.remove("hidden");
+  sheet.classList.remove("hidden");
+
+  if(isView){
+    confirmRow.classList.add("hidden");
+    placeForm.classList.add("hidden");
   }
+}
+function closeSheet(){
+  sheetBackdrop.classList.add("hidden");
+  sheet.classList.add("hidden");
+}
 
-  function setTab(which) {
-    if (which === "map") {
-      tabMap.classList.add("active");
-      tabList.classList.remove("active");
-      renderMapPanel();
-    } else {
-      tabList.classList.add("active");
-      tabMap.classList.remove("active");
-      renderListPanel();
-    }
+btnCopy.addEventListener("click", async () => {
+  const text = (addrText.textContent || "").trim();
+  if(!text) return;
+  try{ await navigator.clipboard.writeText(text); }catch(e){}
+});
+
+btnStreet.addEventListener("click", () => {
+  const lat = pendingLatLng?.lat ?? tempPin?.getLatLng().lat;
+  const lng = pendingLatLng?.lng ?? tempPin?.getLatLng().lng;
+  if(lat == null || lng == null) return;
+  const url = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`;
+  window.open(url, "_blank", "noopener,noreferrer");
+});
+
+// Search (local)
+btnSearch.addEventListener("click", () => {
+  const q = (searchInput.value || "").trim().toLowerCase();
+  if(!q){ renderList(); return; }
+  const filtered = places.filter(p =>
+    (p.name || "").toLowerCase().includes(q) ||
+    (p.memo || "").toLowerCase().includes(q) ||
+    (p.addressKo || "").toLowerCase().includes(q) ||
+    (p.cat || "").toLowerCase().includes(q)
+  );
+  renderList(filtered);
+});
+searchInput.addEventListener("keydown", (e) => { if(e.key==="Enter") btnSearch.click(); });
+
+// My location (more accurate + dot + accuracy)
+btnLocate.addEventListener("click", () => {
+  if(!navigator.geolocation){
+    alert("이 기기/브라우저에서 위치 기능을 사용할 수 없습니다.");
+    return;
   }
-
-  function showToast(msg, ms = 1400) {
-    toast.textContent = msg;
-    toast.classList.remove("hidden");
-    window.clearTimeout(showToast._t);
-    showToast._t = window.setTimeout(() => toast.classList.add("hidden"), ms);
+  if(watchId != null){
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
   }
+  watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      const { latitude:lat, longitude:lng, accuracy } = pos.coords;
+      if(currentCircle) map.removeLayer(currentCircle);
+      if(currentDot) map.removeLayer(currentDot);
 
-  function fmtLatLng(lat, lng) {
-    return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      currentCircle = L.circle([lat,lng], {
+        radius: Math.max(accuracy || 0, 10),
+        weight: 1,
+        color: "#111111",
+        fillColor: "#111111",
+        fillOpacity: 0.08
+      }).addTo(map);
+
+      currentDot = L.circleMarker([lat,lng], {
+        radius: 6,
+        weight: 2,
+        color: "#ffffff",
+        fillColor: "#111111",
+        fillOpacity: 1
+      }).addTo(map);
+
+      map.setView([lat,lng], 16, { animate:true });
+    },
+    () => {
+      alert("위치 권한을 허용했는지 확인해 주세요. (주소창 자물쇠 → 위치 허용)");
+      try{ navigator.geolocation.clearWatch(watchId); }catch(e){}
+      watchId = null;
+    },
+    { enableHighAccuracy:true, timeout:15000, maximumAge:0 }
+  );
+});
+
+// Markers & list
+function catLabel(cat){
+  switch(cat){
+    case "food": return "맛집";
+    case "cafe": return "카페";
+    case "stay": return "숙소";
+    case "spot": return "관광";
+    case "shop": return "쇼핑";
+    default: return "기타";
   }
-
-  function googleMapsLink(lat, lng) {
-    const q = encodeURIComponent(`${lat},${lng}`);
-    return `https://www.google.com/maps?q=${q}`;
+}
+function catEmoji(cat){
+  switch(cat){
+    case "food": return "🍣";
+    case "cafe": return "☕";
+    case "stay": return "🏨";
+    case "spot": return "📍";
+    case "shop": return "🛍️";
+    default: return "⭐";
   }
+}
 
-  function loadPlaces() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return [];
-      const arr = JSON.parse(raw);
-      return Array.isArray(arr) ? arr : [];
-    } catch {
-      return [];
-    }
-  }
-
-  function savePlaces() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(places));
-  }
-
-  function uid() {
-    return Math.random().toString(36).slice(2) + Date.now().toString(36);
-  }
-
-  function markerIcon(color = "#111827", size = 16) {
-    return L.divIcon({
-      className: "placePin",
-      html: `<div style="
-        width:${size}px;height:${size}px;border-radius:999px;
-        background:${color};border:3px solid #ffffff;
-        box-shadow:0 6px 14px rgba(0,0,0,.18);
-      "></div>`,
-      iconSize: [size, size],
-      iconAnchor: [size / 2, size / 2],
+function renderMarkers(){
+  markersLayer.clearLayers();
+  places.forEach((p) => {
+    const icon = L.divIcon({
+      className: "pin",
+      html: `<div class="pinDot">${catEmoji(p.cat)}</div>`,
+      iconSize: [26,26],
+      iconAnchor: [13,13]
     });
-  }
+    const m = L.marker([p.lat, p.lng], { icon }).addTo(markersLayer);
+    m.on("click", () => {
+      pendingLatLng = { lat:p.lat, lng:p.lng };
+      pendingAddress = p.addressKo || "";
+      dropTempPin(p.lat, p.lng);
 
-  function renderMarkers() {
-    markers.clearLayers();
-    for (const p of places) {
-      const m = L.marker([p.lat, p.lng], { icon: markerIcon("#111827", 16) });
-      m.on("click", () => {
-        selectedId = p.id;
-        setTab("map");
-        setSheet("open");
-        renderPlaceDetail(p);
-      });
-      m.addTo(markers);
-    }
-  }
-
-  function clearTemp() {
-    if (tempPin) {
-      map.removeLayer(tempPin);
-      tempPin = null;
-    }
-    tempLatLng = null;
-    tempAddress = "";
-  }
-
-  function setMode(next) {
-    mode = next;
-    if (mode === "add") {
-      showToast("지도에서 위치를 찍어주세요");
-    } else {
-      clearTemp();
-    }
-  }
-
-  btnAddMode.addEventListener("click", () => {
-    setMode(mode === "add" ? "browse" : "add");
+      openSheet({ title: p.name, address: p.addressKo || "(주소 없음)", mode:"view" });
+    });
   });
+}
 
-  map.on("click", async (e) => {
-    if (mode !== "add") return;
-
-    clearTemp();
-    tempLatLng = e.latlng;
-
-    tempPin = L.marker([e.latlng.lat, e.latlng.lng], {
-      icon: markerIcon("#2563eb", 18),
-    }).addTo(map);
-
-    setSheet("open");
-    setTab("map");
-    renderConfirmSave();
-
-    tempAddress = "";
-    const addr = await reverseGeocodeOSM(e.latlng.lat, e.latlng.lng);
-    if (addr) tempAddress = addr;
-
-    renderConfirmSave();
-  });
-
-  async function reverseGeocodeOSM(lat, lng) {
-    if (!navigator.onLine) return "";
-    try {
-      const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
-        lat
-      )}&lon=${encodeURIComponent(lng)}&zoom=18&addressdetails=1`;
-      const res = await fetch(url, { headers: { Accept: "application/json" } });
-      if (!res.ok) return "";
-      const data = await res.json();
-      return data.display_name || "";
-    } catch {
-      return "";
-    }
+function renderList(custom){
+  const arr = custom || places;
+  listEl.innerHTML = "";
+  if(arr.length === 0){
+    const empty = document.createElement("div");
+    empty.className = "card";
+    empty.textContent = "저장된 장소가 없습니다. 지도에서 ＋로 추가해 보세요.";
+    listEl.appendChild(empty);
+    return;
   }
 
-  function renderMapPanel() {
-    if (selectedId) {
-      const p = places.find((x) => x.id === selectedId);
-      if (p) return renderPlaceDetail(p);
-    }
-    if (mode === "add" && tempLatLng) return renderConfirmSave();
-    renderHomePanel();
-  }
+  arr.forEach((p) => {
+    const card = document.createElement("div");
+    card.className = "card";
 
-  function renderHomePanel() {
-    sheetBody.innerHTML = `
-      <div class="card">
-        <div class="cardTitle">일본 여행 지도</div>
-        <div class="cardSub">• <span class="kbd">＋</span> 눌러 <b>장소 추가 모드</b> → 지도에서 위치를 찍으세요<br/>
-• 저장한 장소는 <b>목록</b>에서 검색/관리합니다</div>
-        <div class="cardRow">
-          <button class="btn primary" id="goAdd">장소 추가 시작</button>
-          <button class="btn" id="goList">저장 목록 보기</button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="cardTitle">안내</div>
-        <div class="cardSub">지도는 OSM(무료)입니다. 주소 표시는 OSM(Nominatim) 무료 기능(레이트리밋)이므로 표시가 늦거나 실패할 수 있습니다.</div>
-      </div>
-    `;
-    document.getElementById("goAdd").addEventListener("click", () => setMode("add"));
-    document.getElementById("goList").addEventListener("click", () => {
-      setTab("list");
-      setSheet("open");
-    });
-  }
+    const top = document.createElement("div");
+    top.className = "cardTop";
 
-  function renderConfirmSave() {
-    if (!tempLatLng) return renderHomePanel();
+    const left = document.createElement("div");
+    const h = document.createElement("div");
+    h.className = "cardTitle";
+    h.textContent = `${catEmoji(p.cat)} ${p.name}`;
 
-    const addrLine = tempAddress
-      ? `<div class="cardSub">${escapeHtml(tempAddress)}</div>`
-      : `<div class="cardSub">주소 불러오는 중… (인터넷 필요)</div>`;
+    const addr = document.createElement("div");
+    addr.className = "cardAddr";
+    addr.textContent = p.addressKo || "(주소 없음)";
 
-    sheetBody.innerHTML = `
-      <div class="card">
-        <div class="cardTitle">이 위치를 저장할까요?<span class="badge">확인</span></div>
-        ${addrLine}
-        <div class="cardSub">좌표: ${fmtLatLng(tempLatLng.lat, tempLatLng.lng)}</div>
-        <div class="cardRow">
-          <button class="btn" id="btnCancelTemp">취소</button>
-          <button class="btn primary" id="btnOpenForm">장소 등록</button>
-        </div>
-      </div>
-    `;
+    left.appendChild(h);
+    left.appendChild(addr);
 
-    document.getElementById("btnCancelTemp").addEventListener("click", () => {
-      clearTemp();
-      setMode("browse");
-      setSheet("peek");
-      renderHomePanel();
+    const badge = document.createElement("div");
+    badge.className = "badge";
+    badge.textContent = catLabel(p.cat);
+
+    top.appendChild(left);
+    top.appendChild(badge);
+
+    const memo = document.createElement("div");
+    memo.className = "cardMemo";
+    memo.textContent = p.memo || "";
+
+    const btns = document.createElement("div");
+    btns.className = "cardBtns";
+
+    const b1 = document.createElement("button");
+    b1.className = "btn ghost";
+    b1.textContent = "지도에서 보기";
+    b1.addEventListener("click", () => {
+      showMap();
+      map.setView([p.lat, p.lng], 17, { animate:true });
+      pendingLatLng = { lat:p.lat, lng:p.lng };
+      pendingAddress = p.addressKo || "";
+      dropTempPin(p.lat, p.lng);
+      openSheet({ title: p.name, address: p.addressKo || "(주소 없음)", mode:"view" });
     });
 
-    document.getElementById("btnOpenForm").addEventListener("click", () => {
-      renderSaveForm();
-    });
-  }
-
-  function renderSaveForm(existing = null) {
-    const lat = existing ? existing.lat : tempLatLng?.lat;
-    const lng = existing ? existing.lng : tempLatLng?.lng;
-    if (lat == null || lng == null) return;
-
-    const name = existing?.name || "";
-    const nameJa = existing?.nameJa || "";
-    const category = existing?.category || "맛집";
-    const memo = existing?.memo || "";
-    const addr = existing?.address || tempAddress || "";
-
-    sheetBody.innerHTML = `
-      <div class="card">
-        <div class="cardTitle">${existing ? "장소 수정" : "장소 등록"}</div>
-        <div class="cardSub">${addr ? escapeHtml(addr) + "<br/>" : ""}좌표: ${fmtLatLng(lat, lng)}</div>
-
-        <div class="form">
-          <div class="field">
-            <label>이름(한국어) *</label>
-            <input id="fName" type="text" value="${escapeAttr(name)}" placeholder="예) 이치란 라멘 본점" />
-          </div>
-
-          <div class="field">
-            <label>이름(일본어/현지표기)</label>
-            <input id="fNameJa" type="text" value="${escapeAttr(nameJa)}" placeholder="예) 一蘭 本社総本店" />
-            <div class="helper">자동 번역 API는 사용하지 않습니다. 필요하면 “번역 링크”를 열어 확인 후 붙여넣으세요.</div>
-            <div class="cardRow">
-              <button class="btn" id="btnTranslate">번역 링크</button>
-            </div>
-          </div>
-
-          <div class="field">
-            <label>카테고리</label>
-            <select id="fCategory">
-              ${["맛집","카페","관광","쇼핑","숙소","기타"].map(c => `<option ${c===category?"selected":""}>${c}</option>`).join("")}
-            </select>
-          </div>
-
-          <div class="field">
-            <label>메모</label>
-            <textarea id="fMemo" placeholder="예) 웨이팅, 추천 메뉴, 예약 링크">${escapeHtml(memo)}</textarea>
-          </div>
-
-          <div class="cardRow">
-            <button class="btn" id="btnBack">${existing ? "취소" : "뒤로"}</button>
-            <button class="btn primary" id="btnSave">${existing ? "저장" : "등록"}</button>
-          </div>
-
-          <div class="cardRow">
-            <a class="btn" href="${googleMapsLink(lat,lng)}" target="_blank" rel="noreferrer">구글지도 열기</a>
-          </div>
-        </div>
-      </div>
-    `;
-
-    document.getElementById("btnTranslate").addEventListener("click", () => {
-      const text = (document.getElementById("fName").value || "").trim();
-      const url = `https://translate.google.com/?sl=ko&tl=ja&text=${encodeURIComponent(text)}&op=translate`;
-      window.open(url, "_blank", "noopener,noreferrer");
-    });
-
-    document.getElementById("btnBack").addEventListener("click", () => {
-      if (existing) return renderPlaceDetail(existing);
-      return renderConfirmSave();
-    });
-
-    document.getElementById("btnSave").addEventListener("click", () => {
-      const n = (document.getElementById("fName").value || "").trim();
-      const nja = (document.getElementById("fNameJa").value || "").trim();
-      const cat = document.getElementById("fCategory").value;
-      const m = (document.getElementById("fMemo").value || "").trim();
-
-      if (!n) return showToast("이름(한국어)을 입력해 주세요");
-
-      if (existing) {
-        existing.name = n;
-        existing.nameJa = nja;
-        existing.category = cat;
-        existing.memo = m;
-        savePlaces();
-        renderMarkers();
-        showToast("수정했습니다");
-        return renderPlaceDetail(existing);
-      }
-
-      const newPlace = {
-        id: uid(),
-        lat, lng,
-        address: addr,
-        name: n,
-        nameJa: nja,
-        category: cat,
-        memo: m,
-        createdAt: new Date().toISOString(),
-      };
-
-      places.unshift(newPlace);
-      savePlaces();
+    const b2 = document.createElement("button");
+    b2.className = "btn ghost";
+    b2.textContent = "삭제";
+    b2.addEventListener("click", () => {
+      if(!confirm("삭제할까요?")) return;
+      places = places.filter(x => x.id !== p.id);
+      savePlaces(places);
       renderMarkers();
-
-      selectedId = newPlace.id;
-      setMode("browse");
-      clearTemp();
-      showToast("저장했습니다");
-      return renderPlaceDetail(newPlace);
-    });
-  }
-
-  function renderPlaceDetail(p) {
-    sheetBody.innerHTML = `
-      <div class="card">
-        <div class="cardTitle">${escapeHtml(p.name)}<span class="badge">${escapeHtml(p.category || "기타")}</span></div>
-        <div class="cardSub">
-          ${p.nameJa ? "일본어: " + escapeHtml(p.nameJa) + "<br/>" : ""}
-          ${p.address ? escapeHtml(p.address) + "<br/>" : ""}
-          좌표: ${fmtLatLng(p.lat, p.lng)}
-        </div>
-        ${p.memo ? `<div class="cardSub">메모: ${escapeHtml(p.memo)}</div>` : ""}
-        <div class="cardRow">
-          <button class="btn primary" id="btnGoHere">여기로 이동</button>
-          <a class="btn" href="${googleMapsLink(p.lat,p.lng)}" target="_blank" rel="noreferrer">구글지도</a>
-        </div>
-        <div class="cardRow">
-          <button class="btn" id="btnEdit">수정</button>
-          <button class="btn danger" id="btnDelete">삭제</button>
-        </div>
-      </div>
-    `;
-
-    document.getElementById("btnGoHere").addEventListener("click", () => {
-      map.setView([p.lat, p.lng], Math.max(map.getZoom(), 16));
-      showToast("이동했습니다");
+      renderList();
     });
 
-    document.getElementById("btnEdit").addEventListener("click", () => renderSaveForm(p));
+    btns.appendChild(b1);
+    btns.appendChild(b2);
 
-    document.getElementById("btnDelete").addEventListener("click", () => {
-      if (!confirm("이 장소를 삭제할까요?")) return;
-      places = places.filter((x) => x.id !== p.id);
-      savePlaces();
+    card.appendChild(top);
+    if(p.memo) card.appendChild(memo);
+    card.appendChild(btns);
+
+    listEl.appendChild(card);
+  });
+}
+
+// Export / Import
+btnExport.addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify({version:2, places}, null, 2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "japan-travel-map.json";
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+btnImport.addEventListener("click", () => importFile.click());
+importFile.addEventListener("change", async () => {
+  const f = importFile.files?.[0];
+  if(!f) return;
+  try{
+    const text = await f.text();
+    const data = JSON.parse(text);
+    if(Array.isArray(data.places)){
+      places = data.places;
+      savePlaces(places);
       renderMarkers();
-      selectedId = null;
-      showToast("삭제했습니다");
-      renderHomePanel();
-    });
-  }
-
-  function renderListPanel() {
-    const q = (searchInput.value || "").trim().toLowerCase();
-    const filtered = q
-      ? places.filter((p) =>
-          (p.name || "").toLowerCase().includes(q) ||
-          (p.nameJa || "").toLowerCase().includes(q) ||
-          (p.memo || "").toLowerCase().includes(q) ||
-          (p.category || "").toLowerCase().includes(q)
-        )
-      : places;
-
-    sheetBody.innerHTML = `
-      <div class="card">
-        <div class="cardTitle">저장 목록 <span class="badge">${filtered.length}개</span></div>
-        <div class="cardSub">검색은 상단 검색창에서 합니다.</div>
-        <div class="cardRow">
-          <button class="btn primary" id="btnAddFromList">새 장소 추가</button>
-        </div>
-      </div>
-      <div id="listWrap"></div>
-    `;
-
-    document.getElementById("btnAddFromList").addEventListener("click", () => {
-      setTab("map");
-      setSheet("open");
-      setMode("add");
-    });
-
-    const wrap = document.getElementById("listWrap");
-    if (!filtered.length) {
-      wrap.innerHTML = `<div class="card"><div class="cardSub">저장된 장소가 없습니다.</div></div>`;
-      return;
+      renderList();
+      alert("가져오기 완료");
+    }else{
+      alert("형식이 올바르지 않습니다.");
     }
-
-    wrap.innerHTML = filtered
-      .map((p) => `
-        <div class="listItem" data-id="${escapeAttr(p.id)}">
-          <div class="listTop">
-            <div class="listName">${escapeHtml(p.name)} <span class="badge">${escapeHtml(p.category||"기타")}</span></div>
-            <div class="listMeta">${new Date(p.createdAt || Date.now()).toLocaleDateString("ko-KR")}</div>
-          </div>
-          <div class="cardSub">${p.nameJa ? "일본어: " + escapeHtml(p.nameJa) + "<br/>" : ""}${p.memo ? "메모: " + escapeHtml(p.memo) + "<br/>" : ""}${p.address ? escapeHtml(p.address) : ""}</div>
-        </div>
-      `)
-      .join("");
-
-    wrap.querySelectorAll(".listItem").forEach((el) => {
-      el.addEventListener("click", () => {
-        const id = el.getAttribute("data-id");
-        const p = places.find((x) => x.id === id);
-        if (!p) return;
-        selectedId = p.id;
-        setTab("map");
-        setSheet("open");
-        map.setView([p.lat, p.lng], Math.max(map.getZoom(), 16));
-        renderPlaceDetail(p);
-      });
-    });
+  }catch(e){
+    alert("파일을 읽을 수 없습니다.");
+  }finally{
+    importFile.value = "";
   }
+});
 
-  btnListTab.addEventListener("click", () => { setTab("list"); setSheet("open"); });
+// Temp pin
+function dropTempPin(lat, lng){
+  clearTempPin();
+  tempPin = L.circleMarker([lat,lng], {
+    radius: 8,
+    weight: 2,
+    color: "#111111",
+    fillColor: "#ffffff",
+    fillOpacity: 1
+  }).addTo(map);
+}
+function clearTempPin(){
+  if(tempPin){ map.removeLayer(tempPin); tempPin = null; }
+}
 
-  tabMap.addEventListener("click", () => setTab("map"));
-  tabList.addEventListener("click", () => setTab("list"));
+// Reverse geocode (Korean)
+async function reverseGeocodeKo(lat, lng){
+  const url = new URL("https://nominatim.openstreetmap.org/reverse");
+  url.searchParams.set("format","jsonv2");
+  url.searchParams.set("lat", String(lat));
+  url.searchParams.set("lon", String(lng));
+  url.searchParams.set("zoom","18");
+  url.searchParams.set("addressdetails","1");
+  url.searchParams.set("accept-language","ko");
 
-  btnCloseSheet.addEventListener("click", () => setSheet("peek"));
-  scrim.addEventListener("click", () => setSheet("peek"));
+  const res = await fetch(url.toString(), { headers: { "Accept":"application/json" } });
+  if(!res.ok) throw new Error("reverse failed");
+  const data = await res.json();
+  return (data && data.display_name) ? data.display_name : "";
+}
 
-  btnClearSearch.addEventListener("click", () => {
-    searchInput.value = "";
-    searchInput.focus();
-    if (tabList.classList.contains("active")) renderListPanel();
-  });
+// Storage
+function loadPlaces(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  }catch(e){ return []; }
+}
+function savePlaces(arr){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+}
 
-  searchInput.addEventListener("input", () => {
-    if (tabList.classList.contains("active")) renderListPanel();
-  });
-
-  btnLocate.addEventListener("click", () => {
-    if (!navigator.geolocation) return showToast("이 기기에서 위치 기능을 사용할 수 없습니다");
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-
-        map.setView([lat, lng], Math.max(map.getZoom(), 17));
-
-        if (currentLocationMarker) map.removeLayer(currentLocationMarker);
-        currentLocationMarker = L.circleMarker([lat, lng], {
-          radius: 8,
-          color: "#ffffff",
-          weight: 2,
-          fillColor: "#1a73e8",
-          fillOpacity: 1,
-        }).addTo(map);
-
-        if (currentAccuracyCircle) map.removeLayer(currentAccuracyCircle);
-        if (typeof pos.coords.accuracy === "number") {
-          currentAccuracyCircle = L.circle([lat, lng], {
-            radius: pos.coords.accuracy,
-            color: "#1a73e8",
-            fillColor: "#1a73e8",
-            fillOpacity: 0.12,
-            weight: 1,
-          }).addTo(map);
-        }
-
-        showToast("현위치로 이동했습니다");
-      },
-      () => showToast("위치 권한을 확인해 주세요"),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-  });
-
-  function updateOnline() {
-    offlineBanner.classList.toggle("hidden", navigator.onLine);
-  }
-  window.addEventListener("online", updateOnline);
-  window.addEventListener("offline", updateOnline);
-  updateOnline();
-
-  setSheet("peek");
-  setTab("map");
-  renderHomePanel();
-
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;",
-    }[c]));
-  }
-  function escapeAttr(s) {
-    return escapeHtml(s).replace(/\n/g, " ");
-  }
-})();
+// Utils
+function cryptoRandomId(){
+  const a = crypto.getRandomValues(new Uint8Array(8));
+  return Array.from(a).map(x=>x.toString(16).padStart(2,"0")).join("");
+}
