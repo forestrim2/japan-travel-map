@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { googleMapsDirectionsUrl, googleMapsPlaceUrl } from "../utils/googleMaps.js";
+import { googleMapsDirectionsUrl, googleMapsPlaceUrlFromPin } from "../utils/googleMaps.js";
 import { osrmRouteETA, formatETA } from "../utils/osrm.js";
 
 export default function PinDetail({
@@ -31,17 +31,22 @@ export default function PinDetail({
     return () => { alive = false; };
   }, [pin.id, pin.lat, pin.lng, userLocation?.lat, userLocation?.lng]);
 
-  const placeUrl = useMemo(() => googleMapsPlaceUrl(pin.lat, pin.lng, pin.name), [pin.lat, pin.lng, pin.name]);
+  const placeUrl = useMemo(() => googleMapsPlaceUrlFromPin(pin), [pin]);
 
   const originStr = userLocation ? `${userLocation.lat},${userLocation.lng}` : "";
-  const dirTransit = googleMapsDirectionsUrl(originStr, pin.lat, pin.lng, "transit");
-  const dirWalk = googleMapsDirectionsUrl(originStr, pin.lat, pin.lng, "walking");
-  const dirDrive = googleMapsDirectionsUrl(originStr, pin.lat, pin.lng, "driving");
+  const destQuery =
+    (pin.addressKo && pin.addressKo.trim()) ||
+    (pin.addressJa && pin.addressJa.trim()) ||
+    `${pin.lat},${pin.lng}`;
+
+  const dirTransit = googleMapsDirectionsUrl(originStr, destQuery, "transit");
+  const dirWalk = googleMapsDirectionsUrl(originStr, destQuery, "walking");
+  const dirDrive = googleMapsDirectionsUrl(originStr, destQuery, "driving");
 
   return (
     <div className="panel" role="dialog" aria-modal="true">
       <div className="panelHeader">
-        <div className="panelTitle">{pin.name}</div>
+        <div className="panelTitle">{pin.name || "저장한 핀"}</div>
         <button className="chip" onClick={onClose}>닫기</button>
       </div>
 
@@ -56,7 +61,7 @@ export default function PinDetail({
 
         <div className="kv">
           <label>메모</label>
-          <div>{pin.memo}</div>
+          <div>{pin.memo || ""}</div>
         </div>
 
         {pin.photos?.length ? (
@@ -93,7 +98,7 @@ export default function PinDetail({
               <div className="small">차량 ETA: {etaDrive ? formatETA(etaDrive.seconds) : "계산 중…"}</div>
             </>
           ) : (
-            <div className="small">내 위치를 켜면 ETA가 표시됩니다.</div>
+            <div className="small">현위치를 켜면 ETA가 표시됩니다.</div>
           )}
           <div className="inlineBtns">
             <a className="chip" href={dirTransit} target="_blank" rel="noreferrer">대중교통</a>
