@@ -39,7 +39,7 @@ export default function MapView({
     const map = mapRef.current;
     map.flyTo([flyTo.lat, flyTo.lng], flyTo.zoom ?? 14, { duration: 0.8 });
     if (flyTo.pinId) onSelectPin(flyTo.pinId);
-  }, [flyTo?.lat, flyTo?.lng, flyTo?.zoom, flyTo?.pinId]);
+  }, [flyTo?.lat, flyTo?.lng, flyTo?.zoom, flyTo?.pinId, flyTo?.t]);
 
   const center = useMemo(() => [35.6, 134.6], []);
 

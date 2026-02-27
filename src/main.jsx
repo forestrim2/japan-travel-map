@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -9,6 +9,20 @@ import PinDetail from "./components/PinDetail.jsx";
 
 import { db, ensureSeed, addCity, renameCity, deleteCity, addTheme, renameTheme, deleteTheme, addPin, updatePin, deletePin } from "./db.js";
 import { nominatimSearch, nominatimReverse } from "./utils/nominatim.js";
+
+const SEARCH_HISTORY_KEY = "tpm_search_history_v1";
+
+function loadHistory() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(SEARCH_HISTORY_KEY) || "[]");
+    return Array.isArray(arr) ? arr.slice(0, 5) : [];
+  } catch {
+    return [];
+  }
+}
+function saveHistory(arr) {
+  localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(arr.slice(0, 5)));
+}
 
 function App() {
   const [cities, setCities] = useState([]);
@@ -29,8 +43,11 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searchBusy, setSearchBusy] = useState(false);
+  const [searchHistory, setSearchHistory] = useState(loadHistory());
 
   const [userLocation, setUserLocation] = useState(null);
+
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const filteredPins = useMemo(() => {
     let out = pins;
@@ -44,7 +61,7 @@ function App() {
     if (!q) return [];
     return pins
       .filter(p => {
-        const hay = `${p.name||""} ${p.memo||""} ${p.addressKo||""} ${p.addressJa||""} ${(p.tags||[]).join(" ")}`.toLowerCase();
+        const hay = `${p.name||""} ${p.memo||""} ${p.addressKo||""} ${p.addressJa||""}`.toLowerCase();
         return hay.includes(q);
       })
       .slice(0, 6);
@@ -74,7 +91,7 @@ function App() {
     })();
   }, []);
 
-  // Enter로 검색도 지원
+  // Enter로 검색
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== "Enter") return;
@@ -159,12 +176,11 @@ function App() {
     if (editorState.mode === "create") {
       const id = await addPin(pinData);
       await refreshAll();
-      // "도시는 최종 저장 기준" → 저장한 도시/테마로 좌측 필터도 맞춰줌
       setSelectedCityId(pinData.cityId);
       setSelectedThemeId(pinData.themeId);
       setExpandedCityIds(prev => new Set([...prev, pinData.cityId]));
       setSelectedPinId(id);
-      setFlyTo({ lat: pinData.lat, lng: pinData.lng, zoom: 16, pinId: id });
+      setFlyTo({ lat: pinData.lat, lng: pinData.lng, zoom: 16, pinId: id, t: Date.now() });
     } else {
       await updatePin(pinData.id, pinData);
       await refreshAll();
@@ -172,6 +188,7 @@ function App() {
       setSelectedThemeId(pinData.themeId);
       setExpandedCityIds(prev => new Set([...prev, pinData.cityId]));
       setSelectedPinId(pinData.id);
+      setFlyTo({ lat: pinData.lat, lng: pinData.lng, zoom: 16, pinId: pinData.id, t: Date.now() });
     }
     setEditorState(null);
     setAddMode(false);
@@ -184,13 +201,17 @@ function App() {
     await refreshAll();
   }
 
-  async function runSearch() {
-    const q = searchQuery.trim();
+  async function runSearch(qOverride) {
+    const q = (qOverride ?? searchQuery).trim();
     if (!q) return;
     try {
       setSearchBusy(true);
       const res = await nominatimSearch(q);
       setSearchResults(res || []);
+
+      const nextHist = [q, ...searchHistory.filter(x => x !== q)].slice(0, 5);
+      setSearchHistory(nextHist);
+      saveHistory(nextHist);
     } catch {
       alert("검색에 실패했습니다.");
     } finally {
@@ -199,7 +220,6 @@ function App() {
   }
 
   async function fillAddressesFor(lat, lng) {
-    // 한국어/일본어 주소 자동 채우기
     try {
       const [ko, ja] = await Promise.all([
         nominatimReverse(lat, lng, "ko"),
@@ -207,20 +227,22 @@ function App() {
       ]);
       return {
         addressKo: ko?.display_name || "",
-        addressJa: ja?.display_name || ""
+        addressJa: ja?.display_name || "",
+        nameFromKo: (ko?.name || ko?.display_name || "").split(",")[0] || ""
       };
     } catch {
-      return { addressKo: "", addressJa: "" };
+      return { addressKo: "", addressJa: "", nameFromKo: "" };
     }
   }
 
-  async function handlePickSearchResult(r) {
+  async function autoSaveFromSearchResult(r) {
     const lat = Number(r.lat);
     const lng = Number(r.lon);
-    setFlyTo({ lat, lng, zoom: 15 });
 
-    const title = (r.name || r.display_name || "").split(",")[0] || "저장할 장소";
+    setFlyTo({ lat, lng, zoom: 15, t: Date.now() });
+
     const addr = await fillAddressesFor(lat, lng);
+    const title = (r.name || r.display_name || "").split(",")[0] || addr.nameFromKo || "저장한 장소";
 
     const cityId = selectedCityId ?? cities[0]?.id ?? null;
     const themeId =
@@ -228,23 +250,36 @@ function App() {
       themes.find(t => t.cityId === cityId)?.id ??
       null;
 
-    openCreateEditor({
+    const pinData = {
       lat,
       lng,
       cityId,
       themeId,
-      name: title,            // 상호 기본값
-      addressJa: addr.addressJa, // 자동
-      addressKo: addr.addressKo, // 자동
+      name: title,
+      addressJa: addr.addressJa,
+      addressKo: addr.addressKo,
       memo: "",
       links: [],
-      photos: [],
-      tags: []
-    });
+      photos: []
+    };
+
+    const id = await addPin(pinData);
+    await refreshAll();
+
+    setSelectedCityId(cityId);
+    setSelectedThemeId(themeId);
+    setExpandedCityIds(prev => new Set([...prev, cityId]));
+    setSelectedPinId(id);
+
+    setFlyTo({ lat, lng, zoom: 16, pinId: id, t: Date.now() });
+
+    // 모바일: 자동 저장 후 사이드바 닫기
+    setSidebarOpen(false);
   }
 
   function handlePickLocalPin(pin) {
-    setFlyTo({ lat: pin.lat, lng: pin.lng, zoom: 16, pinId: pin.id });
+    setFlyTo({ lat: pin.lat, lng: pin.lng, zoom: 16, pinId: pin.id, t: Date.now() });
+    setSidebarOpen(false);
   }
 
   async function handleMapPickForCreate(latlng) {
@@ -259,20 +294,20 @@ function App() {
       themes.find(t => t.cityId === cityId)?.id ??
       null;
 
-    // 지도에서 찍은 경우 이름은 비워두고 주소 기반으로 사용자가 입력/수정
     openCreateEditor({
       lat,
       lng,
       cityId,
       themeId,
-      name: "",
+      name: addr.nameFromKo || "",
       addressJa: addr.addressJa,
       addressKo: addr.addressKo,
       memo: "",
       links: [],
-      photos: [],
-      tags: []
+      photos: []
     });
+
+    setSidebarOpen(false);
   }
 
   function handleMyLocation() {
@@ -284,7 +319,7 @@ function App() {
       (pos) => {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setUserLocation(loc);
-        setFlyTo({ lat: loc.lat, lng: loc.lng, zoom: 14 });
+        setFlyTo({ lat: loc.lat, lng: loc.lng, zoom: 14, t: Date.now() });
       },
       () => alert("위치 권한이 필요합니다."),
       { enableHighAccuracy: true, timeout: 10000 }
@@ -303,13 +338,19 @@ function App() {
 
   return (
     <div className="app">
+      {/* 모바일: 메뉴 버튼 */}
+      <button className="menuBtn" title="메뉴" onClick={() => setSidebarOpen(true)}>☰</button>
+      {sidebarOpen ? <div className="drawerBackdrop" onClick={() => setSidebarOpen(false)} /> : null}
+
       <Sidebar
+        isOpen={sidebarOpen || window.innerWidth > 900}
+        onClose={() => setSidebarOpen(false)}
         cities={cities}
         themes={themes}
         pins={pins}
         selectedCityId={selectedCityId}
         selectedThemeId={selectedThemeId}
-        setSelectedCityId={setSelectedCityId}
+        setSelectedCityId={(id) => { setSelectedCityId(id); setSelectedThemeId(null); }}
         setSelectedThemeId={setSelectedThemeId}
         expandedCityIds={expandedCityIds}
         toggleCityExpanded={toggleCityExpanded}
@@ -321,9 +362,12 @@ function App() {
         onDeleteTheme={handleDeleteTheme}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
-        onRunSearch={runSearch}
-        searchResults={searchBusy ? [] : searchResults}
-        onPickSearchResult={handlePickSearchResult}
+        onRunSearch={() => runSearch()}
+        searchBusy={searchBusy}
+        searchResults={searchResults}
+        searchHistory={searchHistory}
+        onPickHistory={(q) => { setSearchQuery(q); runSearch(q); }}
+        onPickSearchResult={(r) => autoSaveFromSearchResult(r)}
         localResults={localResults}
         onPickLocalPin={handlePickLocalPin}
       />
@@ -341,10 +385,10 @@ function App() {
 
         <div className="fabStack">
           <button className="fab" title="핀 추가" onClick={() => setAddMode(v => !v)}>
-            {addMode ? "✕" : "+"}
+            {addMode ? "✕" : "＋"}
           </button>
-          <button className="fab" title="내 위치" onClick={handleMyLocation}>⌖</button>
-          <button className="fab" title="길찾기(구글맵)" onClick={handleDirections}>➤</button>
+          <button className="fab" title="현위치" onClick={handleMyLocation}>⌖</button>
+          <button className="fab" title="길찾기" onClick={handleDirections}>➤</button>
         </div>
 
         {editorState ? (
