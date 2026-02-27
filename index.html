@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>일본 여행 지도</title>
+  <link rel="preconnect" href="https://unpkg.com" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <button id="btnMenu" class="iconBtn" aria-label="메뉴">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+
+    <div class="searchWrap">
+      <input id="searchInput" class="searchInput" type="text" placeholder="내 저장 목록 검색 (이름/메모)" autocomplete="off" />
+      <button id="btnClearSearch" class="iconBtn sm" aria-label="검색어 지우기" title="지우기">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <button id="btnListTab" class="pill" aria-label="목록">목록</button>
+  </header>
+
+  <main class="stage">
+    <div id="map" class="map"></div>
+
+    <div class="fabCol">
+      <button id="btnLocate" class="fab" aria-label="내 위치" title="내 위치">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v3M12 19v3M2 12h3M19 12h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      </button>
+      <button id="btnAddMode" class="fab" aria-label="장소 추가" title="장소 추가">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+    <div id="offlineBanner" class="offlineBanner hidden">
+      오프라인 상태입니다. 저장된 장소는 볼 수 있지만 지도 타일/주소 표시는 인터넷이 필요합니다.
+    </div>
+
+    <section id="sheet" class="sheet" aria-label="패널" data-state="peek">
+      <div class="sheetHandle" id="sheetHandle" aria-hidden="true">
+        <div class="grab"></div>
+      </div>
+
+      <div class="sheetTop">
+        <div class="seg">
+          <button id="tabMap" class="segBtn active" type="button">지도</button>
+          <button id="tabList" class="segBtn" type="button">목록</button>
+        </div>
+
+        <button id="btnCloseSheet" class="iconBtn" aria-label="패널 닫기" title="닫기">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+
+      <div id="sheetBody" class="sheetBody"></div>
+    </section>
+
+    <div id="scrim" class="scrim hidden" aria-hidden="true"></div>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="./app.js"></script>
+</body>
+</html>
