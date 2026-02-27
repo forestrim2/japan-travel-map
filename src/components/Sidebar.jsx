@@ -1,8 +1,6 @@
 import React, { useMemo } from "react";
 
 export default function Sidebar({
-  isOpen,
-  onClose,
   cities,
   themes,
   pins,
@@ -21,10 +19,7 @@ export default function Sidebar({
   searchQuery,
   setSearchQuery,
   onRunSearch,
-  searchBusy,
   searchResults,
-  searchHistory,
-  onPickHistory,
   onPickSearchResult,
   localResults,
   onPickLocalPin
@@ -57,36 +52,19 @@ export default function Sidebar({
   }, [pins]);
 
   return (
-    <aside className={`sidebar ${isOpen ? "open" : ""}`}>
+    <aside className="sidebar">
       <div className="sidebarHeader">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-          <input
-            className="searchInput"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="장소/주소/상호 검색…"
-          />
-          {onClose ? (
-            <button className="chip" onClick={onClose} title="닫기">닫기</button>
-          ) : null}
-        </div>
-
+        <input
+          className="searchInput"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="장소/주소/상호 검색…"
+        />
         <div className="row">
-          <button className="btn btnPrimary" onClick={onRunSearch} disabled={searchBusy}>검색</button>
+          <button className="btn btnPrimary" onClick={onRunSearch}>검색</button>
           <button className="btn btnGhost" onClick={() => setSearchQuery("")}>초기화</button>
         </div>
-
-        {searchHistory?.length ? (
-          <div className="inlineBtns">
-            {searchHistory.map((q, i) => (
-              <button key={i} className="chip" onClick={() => onPickHistory(q)} title="최근 검색">
-                {q}
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        <div className="small">검색 결과 클릭 → 지도 이동 + 자동 저장</div>
+        <div className="small">검색 결과 클릭 → 지도 이동 + 바로 저장</div>
       </div>
 
       <div className="sidebarBody">
@@ -98,7 +76,7 @@ export default function Sidebar({
                 key={r.place_id}
                 className="resultItem"
                 onClick={() => onPickSearchResult(r)}
-                title="클릭: 지도 이동 + 자동 저장"
+                title="클릭: 지도 이동 + 핀 저장"
               >
                 <div className="resultTitle">{(r.name || r.display_name || "").split(",")[0]}</div>
                 <div className="resultSub">{r.display_name}</div>

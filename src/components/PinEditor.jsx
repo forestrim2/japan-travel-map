@@ -15,6 +15,7 @@ export default function PinEditor({
   const [themeId, setThemeId] = useState(initialPin.themeId ?? (themeList[0]?.id ?? null));
 
   useEffect(() => {
+    // 도시 변경 시 테마가 비면 첫 테마로
     if (themeId && themeList.some(t => t.id === themeId)) return;
     setThemeId(themeList[0]?.id ?? null);
   }, [cityId]);
@@ -24,13 +25,15 @@ export default function PinEditor({
   const [addressKo, setAddressKo] = useState(initialPin.addressKo ?? "");
   const [memo, setMemo] = useState(initialPin.memo ?? "");
 
-  const [links, setLinks] = useState(safeArr(initialPin.links)); // [{title,url}]
+  const [links, setLinks] = useState(safeArr(initialPin.links));
   const [photos, setPhotos] = useState(safeArr(initialPin.photos)); // [{name,dataUrl}]
+  const [tags, setTags] = useState((safeArr(initialPin.tags)).join(", "));
+
   const fileRef = useRef(null);
 
-  const addLink = () => setLinks([...links, { title: "", url: "" }]);
+  const canSave = name.trim() && cityId && themeId && memo.trim();
 
-  const deleteLink = (idx) => setLinks(links.filter((_, i) => i !== idx));
+  const addLink = () => setLinks([...links, { title: "", url: "" }]);
 
   const onPickFiles = async (files) => {
     const list = Array.from(files || []);
@@ -49,28 +52,6 @@ export default function PinEditor({
     }
   };
 
-  function normalizeAtSave() {
-    const finalCityId = cityId ?? (cities[0]?.id ?? null);
-    const finalThemeId =
-      themeId ??
-      themes.find(t => t.cityId === finalCityId)?.id ??
-      null;
-
-    return {
-      ...initialPin,
-      cityId: finalCityId,
-      themeId: finalThemeId,
-      name: (name ?? "").trim(),
-      addressJa: (addressJa ?? "").trim(),
-      addressKo: (addressKo ?? "").trim(),
-      memo: memo ?? "",
-      links: links
-        .filter(l => (l.title?.trim() || l.url?.trim()))
-        .map(l => ({ title: (l.title||"").trim(), url: (l.url||"").trim() })),
-      photos
-    };
-  }
-
   return (
     <div className="panel" role="dialog" aria-modal="true">
       <div className="panelHeader">
@@ -81,7 +62,11 @@ export default function PinEditor({
       <div className="panelBody">
         <div className="kv">
           <label>도시(대분류)</label>
-          <select className="select" value={cityId ?? ""} onChange={(e) => setCityId(Number(e.target.value))}>
+          <select
+            className="select"
+            value={cityId ?? ""}
+            onChange={(e) => setCityId(Number(e.target.value))}
+          >
             {cities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
@@ -94,54 +79,56 @@ export default function PinEditor({
         </div>
 
         <div className="kv">
-          <label>거래처명</label>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+          <label>이름(상호) (필수)</label>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="기본값은 자동으로 채워집니다." />
         </div>
 
         <div className="kv">
-          <label>일본 주소</label>
-          <input className="input" value={addressJa} onChange={(e) => setAddressJa(e.target.value)} />
+          <label>주소 (일본어) 자동</label>
+          <input className="input" value={addressJa} onChange={(e) => setAddressJa(e.target.value)} placeholder="자동 입력(수정 가능)" />
         </div>
 
         <div className="kv">
-          <label>한국 주소</label>
-          <input className="input" value={addressKo} onChange={(e) => setAddressKo(e.target.value)} />
+          <label>주소 (한국어) 자동</label>
+          <input className="input" value={addressKo} onChange={(e) => setAddressKo(e.target.value)} placeholder="자동 입력(수정 가능)" />
         </div>
 
         <div className="kv">
-          <label>메모</label>
-          <textarea className="textarea" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="" />
+          <label>메모 (필수)</label>
+          <textarea className="textarea" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="왜 저장했는지, 먹을 메뉴, 주의사항…" />
+        </div>
+
+        <div className="kv">
+          <label>태그 (쉼표로 구분)</label>
+          <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="라멘, 카페, 야경" />
         </div>
 
         <div className="hr" />
 
         <div className="kv">
-          <label>링크</label>
+          <label>링크(리뷰/구글맵/인스타 등) 여러 개</label>
           <div className="inlineBtns">
             <button className="chip" onClick={addLink}>+ 링크 추가</button>
           </div>
-
           {links.map((l, idx) => (
-            <div key={idx} className="resultItem">
-              <div className="linkRow">
-                <input className="input" value={l.title} onChange={(e) => {
-                  const next = [...links]; next[idx] = { ...next[idx], title: e.target.value }; setLinks(next);
-                }} placeholder="제목" />
-                <input className="input" value={l.url} onChange={(e) => {
-                  const next = [...links]; next[idx] = { ...next[idx], url: e.target.value }; setLinks(next);
-                }} placeholder="URL" />
-              </div>
-              <div className="inlineBtns">
-                <button className="chip" onClick={() => deleteLink(idx)}>삭제</button>
-              </div>
+            <div className="linkRow" key={idx}>
+              <input className="input" value={l.title} onChange={(e) => {
+                const next = [...links]; next[idx] = { ...next[idx], title: e.target.value }; setLinks(next);
+              }} placeholder="제목(예: 구글맵)" />
+              <input className="input" value={l.url} onChange={(e) => {
+                const next = [...links]; next[idx] = { ...next[idx], url: e.target.value }; setLinks(next);
+              }} placeholder="URL" />
             </div>
           ))}
+          {links.length ? (
+            <button className="chip" onClick={() => setLinks(links.slice(0, -1))}>마지막 링크 삭제</button>
+          ) : null}
         </div>
 
         <div className="hr" />
 
         <div className="kv">
-          <label>사진</label>
+          <label>사진 업로드(캡쳐 등) 여러 장</label>
           <div className="inlineBtns">
             <button className="chip" onClick={() => fileRef.current?.click()}>+ 사진 추가</button>
             {photos.length ? <button className="chip" onClick={() => setPhotos([])}>전체 삭제</button> : null}
@@ -172,7 +159,22 @@ export default function PinEditor({
 
         <div className="row">
           <button className="btn btnGhost" onClick={onClose}>취소</button>
-          <button className="btn btnPrimary" onClick={() => onSave(normalizeAtSave())}>
+          <button
+            className="btn btnPrimary"
+            disabled={!canSave}
+            onClick={() => onSave({
+              ...initialPin,
+              cityId,
+              themeId,
+              name: name.trim(),
+              addressJa: addressJa.trim(),
+              addressKo: addressKo.trim(),
+              memo: memo.trim(),
+              tags: tags.split(",").map(s => s.trim()).filter(Boolean),
+              links: links.filter(l => (l.title?.trim() || l.url?.trim())).map(l => ({ title: l.title.trim(), url: l.url.trim() })),
+              photos
+            })}
+          >
             저장
           </button>
         </div>
