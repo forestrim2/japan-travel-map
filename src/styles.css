@@ -208,10 +208,10 @@ button{font-family:inherit;}
 }
 
 .menuBtn{
-  position:fixed;
+  position:absolute;
   left:14px;
   top:14px;
-  z-index:3000;
+  z-index:1001;
   width:44px;
   height:44px;
   border-radius:16px;
@@ -225,10 +225,10 @@ button{font-family:inherit;}
 }
 
 .drawerBackdrop{
-  position:fixed;
+  position:absolute;
   inset:0;
   background:rgba(0,0,0,.25);
-  z-index:2500;
+  z-index:1000;
 }
 
 .fab{
