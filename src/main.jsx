@@ -9,7 +9,6 @@ import PinDetail from "./components/PinDetail.jsx";
 
 import { db, ensureSeed, addCity, renameCity, deleteCity, addTheme, renameTheme, deleteTheme, addPin, updatePin, deletePin } from "./db.js";
 import { nominatimSearch, nominatimReverse } from "./utils/nominatim.js";
-import { googleMapsDirectionsUrl } from "./utils/googleMaps.js";
 
 const SEARCH_HISTORY_KEY = "tpm_search_history_v1";
 
@@ -49,9 +48,6 @@ function App() {
   const [userLocation, setUserLocation] = useState(null);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarSignal, setSidebarSignal] = useState(0); // 지도 invalidate 트리거
-
-  const isDesktop = useMemo(() => window.matchMedia?.("(min-width: 901px)")?.matches ?? true, []);
 
   const filteredPins = useMemo(() => {
     let out = pins;
@@ -95,6 +91,7 @@ function App() {
     })();
   }, []);
 
+  // Enter로 검색
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== "Enter") return;
@@ -176,24 +173,23 @@ function App() {
   }
 
   async function handleSavePin(pinData) {
-    if (editorState?.mode === "edit") {
-      await updatePin(pinData.id, pinData);
-      await refreshAll();
-      setSelectedPinId(pinData.id);
-      setFlyTo({ lat: pinData.lat, lng: pinData.lng, zoom: 16, pinId: pinData.id, t: Date.now() });
-    } else {
+    if (editorState.mode === "create") {
       const id = await addPin(pinData);
       await refreshAll();
+      setSelectedCityId(pinData.cityId);
+      setSelectedThemeId(pinData.themeId);
+      setExpandedCityIds(prev => new Set([...prev, pinData.cityId]));
       setSelectedPinId(id);
       setFlyTo({ lat: pinData.lat, lng: pinData.lng, zoom: 16, pinId: id, t: Date.now() });
-    }
-    // 도시/테마는 최종 저장 기준으로 자동 맞춤
-    if (pinData.cityId) {
+    } else {
+      await updatePin(pinData.id, pinData);
+      await refreshAll();
       setSelectedCityId(pinData.cityId);
+      setSelectedThemeId(pinData.themeId);
       setExpandedCityIds(prev => new Set([...prev, pinData.cityId]));
+      setSelectedPinId(pinData.id);
+      setFlyTo({ lat: pinData.lat, lng: pinData.lng, zoom: 16, pinId: pinData.id, t: Date.now() });
     }
-    setSelectedThemeId(pinData.themeId ?? null);
-
     setEditorState(null);
     setAddMode(false);
   }
@@ -270,23 +266,20 @@ function App() {
     const id = await addPin(pinData);
     await refreshAll();
 
-    if (cityId) {
-      setSelectedCityId(cityId);
-      setExpandedCityIds(prev => new Set([...prev, cityId]));
-    }
-    setSelectedThemeId(themeId ?? null);
+    setSelectedCityId(cityId);
+    setSelectedThemeId(themeId);
+    setExpandedCityIds(prev => new Set([...prev, cityId]));
     setSelectedPinId(id);
 
     setFlyTo({ lat, lng, zoom: 16, pinId: id, t: Date.now() });
 
+    // 모바일: 자동 저장 후 사이드바 닫기
     setSidebarOpen(false);
-    setSidebarSignal(x => x + 1);
   }
 
   function handlePickLocalPin(pin) {
     setFlyTo({ lat: pin.lat, lng: pin.lng, zoom: 16, pinId: pin.id, t: Date.now() });
     setSidebarOpen(false);
-    setSidebarSignal(x => x + 1);
   }
 
   async function handleMapPickForCreate(latlng) {
@@ -301,7 +294,7 @@ function App() {
       themes.find(t => t.cityId === cityId)?.id ??
       null;
 
-    const nextDraft = {
+    openCreateEditor({
       lat,
       lng,
       cityId,
@@ -310,15 +303,11 @@ function App() {
       addressJa: addr.addressJa,
       addressKo: addr.addressKo,
       memo: "",
-      links: editorState?.mode === "create" ? (editorState.pin.links || []) : [],
-      photos: editorState?.mode === "create" ? (editorState.pin.photos || []) : []
-    };
-
-    // addMode 상태에서 여러 번 찍으면 팝업이 그 위치로 계속 업데이트
-    setEditorState({ mode: "create", pin: nextDraft });
+      links: [],
+      photos: []
+    });
 
     setSidebarOpen(false);
-    setSidebarSignal(x => x + 1);
   }
 
   function handleMyLocation() {
@@ -331,7 +320,6 @@ function App() {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setUserLocation(loc);
         setFlyTo({ lat: loc.lat, lng: loc.lng, zoom: 14, t: Date.now() });
-        setSidebarSignal(x => x + 1);
       },
       () => alert("위치 권한이 필요합니다."),
       { enableHighAccuracy: true, timeout: 10000 }
@@ -344,31 +332,19 @@ function App() {
       return;
     }
     const origin = userLocation ? `${userLocation.lat},${userLocation.lng}` : "";
-    const destQuery =
-      (selectedPin.addressKo && selectedPin.addressKo.trim()) ||
-      (selectedPin.addressJa && selectedPin.addressJa.trim()) ||
-      `${selectedPin.lat},${selectedPin.lng}`;
-    const url = googleMapsDirectionsUrl(origin, destQuery, "transit");
+    const url = `https://www.google.com/maps/dir/?api=1${origin ? `&origin=${encodeURIComponent(origin)}` : ""}&destination=${encodeURIComponent(`${selectedPin.lat},${selectedPin.lng}`)}&travelmode=transit`;
     window.open(url, "_blank");
-  }
-
-  function openSidebar() {
-    setSidebarOpen(true);
-    setSidebarSignal(x => x + 1);
-  }
-  function closeSidebar() {
-    setSidebarOpen(false);
-    setSidebarSignal(x => x + 1);
   }
 
   return (
     <div className="app">
-      <button className="menuBtn" title="메뉴" onClick={openSidebar}>☰</button>
-      {sidebarOpen && !isDesktop ? <div className="drawerBackdrop" onClick={closeSidebar} /> : null}
+      {/* 모바일: 메뉴 버튼 */}
+      <button className="menuBtn" title="메뉴" onClick={() => setSidebarOpen(true)}>☰</button>
+      {sidebarOpen ? <div className="drawerBackdrop" onClick={() => setSidebarOpen(false)} /> : null}
 
       <Sidebar
-        isOpen={isDesktop || sidebarOpen}
-        onClose={!isDesktop ? closeSidebar : null}
+        isOpen={sidebarOpen || window.innerWidth > 900}
+        onClose={() => setSidebarOpen(false)}
         cities={cities}
         themes={themes}
         pins={pins}
@@ -391,7 +367,7 @@ function App() {
         searchResults={searchResults}
         searchHistory={searchHistory}
         onPickHistory={(q) => { setSearchQuery(q); runSearch(q); }}
-        onPickSearchResult={autoSaveFromSearchResult}
+        onPickSearchResult={(r) => autoSaveFromSearchResult(r)}
         localResults={localResults}
         onPickLocalPin={handlePickLocalPin}
       />
@@ -405,11 +381,10 @@ function App() {
           onMapPickForCreate={handleMapPickForCreate}
           flyTo={flyTo}
           userLocation={userLocation}
-          sidebarOpenSignal={sidebarSignal}
         />
 
         <div className="fabStack">
-          <button className="fab" title="핀 추가" onClick={() => { setAddMode(v => !v); setSidebarSignal(x => x + 1); }}>
+          <button className="fab" title="핀 추가" onClick={() => setAddMode(v => !v)}>
             {addMode ? "✕" : "＋"}
           </button>
           <button className="fab" title="현위치" onClick={handleMyLocation}>⌖</button>
