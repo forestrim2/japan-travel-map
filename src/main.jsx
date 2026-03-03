@@ -32,7 +32,6 @@ function App() {
 
   const [selectedCityId, setSelectedCityId] = useState(null);
   const [selectedThemeId, setSelectedThemeId] = useState(null);
-
   const [expandedCityIds, setExpandedCityIds] = useState(new Set());
 
   const [selectedPinId, setSelectedPinId] = useState(null);
@@ -47,19 +46,18 @@ function App() {
   const [searchHistory, setSearchHistory] = useState(loadHistory());
 
   const [userLocation, setUserLocation] = useState(null);
-
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [invalidateSignal, setInvalidateSignal] = useState(0);
 
-  const [isDesktop, setIsDesktop] = useState(() => {
-    return window.matchMedia?.("(min-width: 901px)")?.matches ?? true;
-  });
+  const [isMobile, setIsMobile] = useState(() => !(window.matchMedia?.("(min-width: 901px)")?.matches ?? true));
+  const [sheetOpen, setSheetOpen] = useState(false); // mobile bottom sheet
 
   useEffect(() => {
     const mq = window.matchMedia?.("(min-width: 901px)");
     if (!mq) return;
     const onChange = () => {
-      setIsDesktop(mq.matches);
+      const mobile = !mq.matches;
+      setIsMobile(mobile);
+      if (!mobile) setSheetOpen(false);
       setInvalidateSignal(x => x + 1);
     };
     onChange();
@@ -109,16 +107,6 @@ function App() {
       setInvalidateSignal(x => x + 1);
     })();
   }, []);
-
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key !== "Enter") return;
-      if (document.activeElement?.tagName?.toLowerCase?.() !== "input") return;
-      runSearch();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [searchQuery]);
 
   const selectedPin = useMemo(() => pins.find(p => p.id === selectedPinId) || null, [pins, selectedPinId]);
 
@@ -235,6 +223,12 @@ function App() {
     }
   }
 
+  function deleteHistoryItem(q) {
+    const next = searchHistory.filter(x => x !== q).slice(0, 5);
+    setSearchHistory(next);
+    saveHistory(next);
+  }
+
   async function fillAddressesFor(lat, lng) {
     try {
       const [ko, ja] = await Promise.all([
@@ -255,6 +249,7 @@ function App() {
     const lat = Number(r.lat);
     const lng = Number(r.lon);
 
+    // 바로 이동
     setFlyTo({ lat, lng, zoom: 15, t: Date.now() });
 
     const addr = await fillAddressesFor(lat, lng);
@@ -291,13 +286,13 @@ function App() {
 
     setFlyTo({ lat, lng, zoom: 16, pinId: id, t: Date.now() });
 
-    setSidebarOpen(false);
+    if (isMobile) setSheetOpen(false);
     setInvalidateSignal(x => x + 1);
   }
 
   function handlePickLocalPin(pin) {
     setFlyTo({ lat: pin.lat, lng: pin.lng, zoom: 16, pinId: pin.id, t: Date.now() });
-    setSidebarOpen(false);
+    if (isMobile) setSheetOpen(false);
     setInvalidateSignal(x => x + 1);
   }
 
@@ -327,7 +322,7 @@ function App() {
     };
 
     setEditorState({ mode: "create", pin: nextDraft });
-    setSidebarOpen(false);
+    if (isMobile) setSheetOpen(false);
     setInvalidateSignal(x => x + 1);
   }
 
@@ -362,23 +357,12 @@ function App() {
     window.open(url, "_blank");
   }
 
-  function openSidebar() {
-    setSidebarOpen(true);
-    setInvalidateSignal(x => x + 1);
-  }
-  function closeSidebar() {
-    setSidebarOpen(false);
-    setInvalidateSignal(x => x + 1);
-  }
-
   return (
     <div className="app">
-      <button className="menuBtn" title="메뉴" onClick={openSidebar}>☰</button>
-      {sidebarOpen && !isDesktop ? <div className="drawerBackdrop" onClick={closeSidebar} /> : null}
-
       <Sidebar
-        isOpen={isDesktop || sidebarOpen}
-        onClose={!isDesktop ? closeSidebar : null}
+        isMobile={isMobile}
+        sheetOpen={sheetOpen}
+        setSheetOpen={setSheetOpen}
         cities={cities}
         themes={themes}
         pins={pins}
@@ -401,6 +385,7 @@ function App() {
         searchResults={searchResults}
         searchHistory={searchHistory}
         onPickHistory={(q) => { setSearchQuery(q); runSearch(q); }}
+        onDeleteHistory={deleteHistoryItem}
         onPickSearchResult={autoSaveFromSearchResult}
         localResults={localResults}
         onPickLocalPin={handlePickLocalPin}
@@ -447,8 +432,6 @@ function App() {
             onClose={() => setSelectedPinId(null)}
           />
         ) : null}
-      
-        <div className="versionBadge">v0.3.9</div>
       </main>
     </div>
   );

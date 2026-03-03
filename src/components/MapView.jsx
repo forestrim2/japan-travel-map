@@ -41,13 +41,8 @@ function AddHandlers({ enabledClick, onPick, enableLongPress }) {
         onPick(startLatLngRef.current);
       }, 550);
     },
-    mouseup() {
-      clearTimer();
-    },
-    mousemove() {
-      // 드래그 이동 시 취소
-      if (timerRef.current) movedRef.current = true;
-    },
+    mouseup() { clearTimer(); },
+    mousemove() { if (timerRef.current) movedRef.current = true; },
     touchstart(e) {
       if (!enableLongPress) return;
       movedRef.current = false;
@@ -58,12 +53,8 @@ function AddHandlers({ enabledClick, onPick, enableLongPress }) {
         onPick(startLatLngRef.current);
       }, 550);
     },
-    touchend() {
-      clearTimer();
-    },
-    touchmove() {
-      if (timerRef.current) movedRef.current = true;
-    }
+    touchend() { clearTimer(); },
+    touchmove() { if (timerRef.current) movedRef.current = true; }
   });
 
   useEffect(() => () => clearTimer(), []);
@@ -76,9 +67,9 @@ export default function MapView({
   onSelectPin,
   addMode,
   onMapPickForCreate,
-  flyTo, // {lat,lng,zoom, pinId?, t?} | null
+  flyTo,
   userLocation,
-  invalidateSignal // number that changes when layout might change
+  invalidateSignal
 }) {
   const mapRef = useRef(null);
 
@@ -110,12 +101,22 @@ export default function MapView({
 
   const center = useMemo(() => [35.6, 134.6], []);
 
+  const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY;
+  const usingMapTiler = Boolean(MAPTILER_KEY);
+  const tileUrl = usingMapTiler
+    ? `https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`
+    : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+
+  const attribution = usingMapTiler
+    ? '&copy; MapTiler &copy; OpenStreetMap contributors'
+    : '&copy; OpenStreetMap contributors';
+
   return (
     <div className="mapWrap">
       <MapContainer
         center={center}
         zoom={6}
-        minZoom={4}
+        minZoom={5}
         maxZoom={18}
         maxBounds={KJ_BOUNDS}
         maxBoundsViscosity={1.0}
@@ -130,20 +131,11 @@ export default function MapView({
           }, 150);
         }}
       >
-        <TileLayer
-          attribution='&copy; OpenStreetMap'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+        <TileLayer attribution={attribution} url={tileUrl} />
 
-        <AddHandlers
-          enabledClick={addMode}
-          enableLongPress={true}
-          onPick={onMapPickForCreate}
-        />
+        <AddHandlers enabledClick={addMode} enableLongPress={true} onPick={onMapPickForCreate} />
 
-        {userLocation ? (
-          <Marker position={[userLocation.lat, userLocation.lng]} />
-        ) : null}
+        {userLocation ? <Marker position={[userLocation.lat, userLocation.lng]} /> : null}
 
         {pins.map((p) => (
           <Marker
