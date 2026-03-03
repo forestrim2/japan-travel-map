@@ -8,7 +8,7 @@ import PinEditor from "./components/PinEditor.jsx";
 import PinDetail from "./components/PinDetail.jsx";
 
 import { db, ensureSeed, addCity, renameCity, deleteCity, addTheme, renameTheme, deleteTheme, addPin, updatePin, deletePin } from "./db.js";
-import { nominatimSearch, nominatimReverse } from "./utils/nominatim.js";
+import { geocodeSearch, geocodeReverse } from "./utils/geocode.js";
 import { googleMapsDirectionsUrl } from "./utils/googleMaps.js";
 
 const SEARCH_HISTORY_KEY = "tpm_search_history_v1";
@@ -210,7 +210,7 @@ function App() {
     if (!q) return;
     try {
       setSearchBusy(true);
-      const res = await nominatimSearch(q);
+      const res = await geocodeSearch(q, { lang: 'ko', limit: 8 });
       setSearchResults(res || []);
 
       const nextHist = [q, ...searchHistory.filter(x => x !== q)].slice(0, 5);
@@ -232,8 +232,8 @@ function App() {
   async function fillAddressesFor(lat, lng) {
     try {
       const [ko, ja] = await Promise.all([
-        nominatimReverse(lat, lng, "ko"),
-        nominatimReverse(lat, lng, "ja")
+        geocodeReverse(lat, lng, { lang: 'ko' }),
+        geocodeReverse(lat, lng, { lang: 'ja' })
       ]);
       return {
         addressKo: ko?.display_name || "",
@@ -363,7 +363,26 @@ function App() {
         isMobile={isMobile}
         drawerOpen={drawerOpen}
         setDrawerOpen={setDrawerOpen}
-        onQuickAdd={() => { setAddMode(true); setDrawerOpen(false); setInvalidateSignal(x => x + 1); }}
+        onQuickAdd={() => {
+          const pick = prompt("추가할 분류를 선택해 주세요.
+1) 도시
+2) 테마");
+          if (!pick) return;
+          const v = pick.trim();
+          if (v === "1" || v.toLowerCase() === "city" || v.includes("도시")) {
+            handleAddCity();
+            return;
+          }
+          if (v === "2" || v.toLowerCase() === "theme" || v.includes("테마")) {
+            const cityId = selectedCityId ?? cities[0]?.id ?? null;
+            if (!cityId) {
+              alert("먼저 도시를 추가해 주세요.");
+              return;
+            }
+            handleAddTheme(cityId);
+            return;
+          }
+        }}
         cities={cities}
         themes={themes}
         pins={pins}

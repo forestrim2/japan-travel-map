@@ -117,7 +117,7 @@ export default function MapView({
         center={center}
         zoom={6}
         minZoom={6}
-        maxZoom={18}
+        maxZoom={19}
         maxBounds={KJ_BOUNDS}
         maxBoundsViscosity={1.0}
         style={{ height: "100%", width: "100%" }}
@@ -131,7 +131,7 @@ export default function MapView({
           }, 150);
         }}
       >
-        <TileLayer attribution={attribution} url={tileUrl} noWrap={true} />
+        <TileLayer attribution={attribution} url={tileUrl} noWrap={true} maxNativeZoom={19} />
 
         <AddHandlers enabledClick={addMode} enableLongPress={true} onPick={onMapPickForCreate} />
 

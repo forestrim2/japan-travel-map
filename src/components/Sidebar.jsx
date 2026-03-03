@@ -172,8 +172,7 @@ export default function Sidebar({
               {isExpanded ? (
                 <div className="treeIndent">
                   <div className="inlineBtns" style={{ padding: "6px 6px 10px" }}>
-                    <button className="chip" onClick={() => onAddTheme(c.id)}>+ 테마</button>
-                  </div>
+                    </div>
 
                   {cityThemes.map((t) => {
                     const themeCount = counts.byTheme.get(t.id) || 0;
@@ -208,8 +207,7 @@ export default function Sidebar({
       <div className="sidebarFooter">
         <div className="footerRow">
           <button className="footerAddBtn" title="추가" onClick={onQuickAdd}>+</button>
-          <button className="footerBtn" onClick={onAddCity}>도시 추가</button>
-        </div>
+          </div>
       </div>
     </aside>
   );

@@ -108,6 +108,32 @@ export default function PinEditor({
           <input className="input" value={addressKo} onChange={(e) => setAddressKo(e.target.value)} />
         </div>
 
+        
+        <div className="kv">
+          <label>구글(로드뷰 검색용) 링크</label>
+          <input
+            className="input"
+            value={pin.roadviewUrl || ""}
+            onChange={(e) => setPin((p) => ({ ...p, roadviewUrl: e.target.value }))}
+            placeholder="자동으로 채워집니다. 필요하면 수정하세요."
+          />
+          <div className="inlineBtns">
+            <button
+              className="btn"
+              type="button"
+              onClick={() => {
+                const q = (pin.addressKo || pin.addressJa || pin.name || "").trim();
+                const url = q ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}&layer=c&cbll=${pin.lat},${pin.lng}` : "";
+                if (!url) return;
+                setPin((p) => ({ ...p, roadviewUrl: url }));
+                window.open(url, "_blank");
+              }}
+            >
+              구글 로드뷰 열기
+            </button>
+          </div>
+        </div>
+
         <div className="kv">
           <label>메모</label>
           <textarea className="textarea" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="" />
