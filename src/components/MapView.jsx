@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, Marker, TileLayer, useMapEvents, CircleMarker } from "react-leaflet";
 import L from "leaflet";
 import { KJ_BOUNDS } from "../utils/bounds.js";
@@ -71,8 +71,6 @@ export default function MapView({
   userLocation,
   invalidateSignal
 }) {
-    }
-  }, [tileErr]);
   const mapRef = useRef(null);
 
   // Tile handling: prevent grey screen on over-zoom / transient tile failures.
@@ -157,13 +155,23 @@ export default function MapView({
 
         {userLocation ? <Marker position={[userLocation.lat, userLocation.lng]} /> : null}
 
-        {pins.map((p) => (
-          <Marker
-            key={p.id}
-            position={[p.lat, p.lng]}
-            eventHandlers={{ click: () => onSelectPin(p.id) }}
-          />
-        ))}
+        {pins.map((p) => {
+          const active = p.id === selectedPinId;
+          return (
+            <CircleMarker
+              key={p.id}
+              center={[p.lat, p.lng]}
+              radius={8}
+              pathOptions={{
+                weight: active ? 3 : 2,
+                opacity: 1,
+                fillOpacity: 0.9,
+                color: active ? "#111" : "#555"
+              }}
+              eventHandlers={{ click: () => onSelectPin(p.id) }}
+            />
+          );
+        })}
       </MapContainer>
     </div>
   );

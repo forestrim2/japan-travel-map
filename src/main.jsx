@@ -269,11 +269,8 @@ function App() {
 
     const addr = await fillAddressesFor(lat, lng);
 
-    const cityId = selectedCityId ?? cities[0]?.id ?? null;
-    const themeId =
-      selectedThemeId ??
-      themes.find(t => t.cityId === cityId)?.id ??
-      null;
+    const cityId = selectedCityId ?? null;
+    const themeId = selectedThemeId ?? null;
 
     const nextDraft = {
       lat,
@@ -357,6 +354,8 @@ function App() {
         onPickSearchResult={autoSaveFromSearchResult}
         localResults={localResults}
         onPickLocalPin={handlePickLocalPin}
+        selectedPinId={selectedPinId}
+        onSelectPin={(id) => setSelectedPinId(id)}
       />
 
       <main className="main">
@@ -387,7 +386,7 @@ function App() {
                 <button
                   className="catBtn"
                   onClick={() => {
-                    const cityId = selectedCityId ?? cities[0]?.id ?? null;
+                    const cityId = selectedCityId ?? null;
                     if (!cityId) {
                       alert("먼저 도시를 추가해 주세요.");
                       return;

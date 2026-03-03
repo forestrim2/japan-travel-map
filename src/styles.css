@@ -589,3 +589,30 @@ button{font-family:inherit;}
   font-size:12px;
   color:var(--muted);
 }
+
+/* v1.1.2 pin list + active highlight */
+.resultItem.active, .pinListItem.active{
+  border-color: var(--text);
+}
+.pinList{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.pinListItem{
+  text-align:left;
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:10px 10px;
+  background:#fff;
+  cursor:pointer;
+}
+.pinListName{ font-weight:700; font-size:13px; }
+.pinListSub{ font-size:12px; color:var(--muted); margin-top:3px; }
+
+@media (max-width: 900px){
+  .menuBtn{ width:52px; height:52px; border-radius:18px; }
+  .locBtn{ width:56px; height:56px; border-radius:20px; }
+  .fab{ width:56px; height:56px; border-radius:20px; }
+  .fabStack{ bottom:86px; }
+}
