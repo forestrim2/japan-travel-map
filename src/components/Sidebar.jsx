@@ -81,16 +81,12 @@ export default function Sidebar({
   return (
     <aside className={wrapCls}>
       <div className="sidebarHeader">
-        <div className="searchRow">
-            <input
+                    <input
           className="searchInput"
           placeholder="주소/상호/메모 검색"
           value={searchQuery}
           onChange={(e) =>
-            <button className="searchGoogleBtn" type="button" onClick={() => onOpenGoogleSearch(searchText)}>
-              구글
-            </button>
-          </div> setSearchQuery(e.target.value)}
+</div> setSearchQuery(e.target.value)}
         />
         <div className="inlineBtns">
           <button className="chip" onClick={onRunSearch} disabled={searchBusy}>

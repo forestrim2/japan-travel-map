@@ -71,6 +71,13 @@ export default function MapView({
   userLocation,
   invalidateSignal
 }) {
+  const [tileUrl, setTileUrl] = useState('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+  const [tileErr, setTileErr] = useState(0);
+  useEffect(() => {
+    if (tileErr > 25) {
+      setTileUrl('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png');
+    }
+  }, [tileErr]);
   const mapRef = useRef(null);
 
   const invalidate = () => {
@@ -117,7 +124,7 @@ export default function MapView({
         center={center}
         zoom={6}
         minZoom={6}
-        maxZoom={19}
+        maxZoom={18}
         maxBounds={KJ_BOUNDS}
         maxBoundsViscosity={1.0}
         style={{ height: "100%", width: "100%" }}
@@ -131,7 +138,7 @@ export default function MapView({
           }, 150);
         }}
       >
-        <TileLayer attribution={attribution} url={tileUrl} noWrap={true} maxNativeZoom={19} />
+        <TileLayer attribution={attribution} url={tileUrl} noWrap={true} maxNativeZoom={18} />
 
         <AddHandlers enabledClick={addMode} enableLongPress={true} onPick={onMapPickForCreate} />
 

@@ -584,19 +584,6 @@ button{font-family:inherit;}
   .fab svg, .locBtn svg, .menuBtn svg{ display:block; }
 }
 
-.searchRow{
-  display:flex;
-  gap:8px;
-  align-items:center;
-}
-.searchGoogleBtn{
-  padding:10px 10px;
-  border-radius:12px;
-  border:1px solid var(--line);
-  background:#fff;
-  cursor:pointer;
-  white-space:nowrap;
-}
 .searchHint{
   margin-top:6px;
   font-size:12px;
