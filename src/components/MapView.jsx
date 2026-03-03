@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { MapContainer, Marker, TileLayer, useMapEvents } from "react-leaflet";
+import { MapContainer, Marker, TileLayer, useMapEvents, CircleMarker } from "react-leaflet";
 import L from "leaflet";
 import { KJ_BOUNDS } from "../utils/bounds.js";
 

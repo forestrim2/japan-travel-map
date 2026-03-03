@@ -335,7 +335,7 @@ function App() {
       (pos) => {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setUserLocation(loc);
-        setFlyTo({ lat: loc.lat, lng: loc.lng, zoom: 14, t: Date.now() });
+        setFlyTo({ lat: loc.lat, lng: loc.lng, zoom: 16, t: Date.now() });
         setInvalidateSignal(x => x + 1);
       },
       () => alert("위치 권한이 필요합니다."),
