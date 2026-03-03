@@ -708,3 +708,41 @@ button{font-family:inherit;}
 }
 
 /* Pin list in selected theme */
+
+/* v1.1.4: sidebar row layout restore */
+.folderRow, .themeRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.rowActions{
+  display:flex;
+  gap:8px;
+  align-items:center;
+}
+.actionBtn{
+  width:34px;
+  height:34px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  background:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+}
+.folderLabel, .themeLabel{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+
+/* v1.1.4: hamburger bottom-left to avoid zoom overlap */
+.menuBtn{
+  position:fixed !important;
+  left:14px !important;
+  bottom:14px !important;
+  top:auto !important;
+  z-index:4000 !important;
+}

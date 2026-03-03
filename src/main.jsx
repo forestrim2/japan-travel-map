@@ -246,7 +246,7 @@ function App() {
     }
   }
 
-  async function handlePickSearchResult(r) {
+  async async function handlePickSearchResult(r) {
     const lat = Number(r.lat);
     const lng = Number(r.lon);
     setFlyTo({ lat, lng, zoom: 15, t: Date.now() });
@@ -266,10 +266,16 @@ function App() {
     const lat = latlng.lat;
     const lng = latlng.lng;
 
-    const addr = await fillAddressesFor(lat, lng);
+    let addr = { addressJa: '', addressKo: '', nameFromKo: '' };
+    try {
+      addr = await fillAddressesFor(lat, lng);
+    } catch {
+      // 네트워크/서버 오류 시에도 저장창은 열리도록
+      addr = { addressJa: '', addressKo: '', nameFromKo: '' };
+    }
 
-    const cityId = selectedCityId ?? null;
-    const themeId = selectedThemeId ?? null;
+    const cityId = null;
+    const themeId = null;
 
     const nextDraft = {
       lat,

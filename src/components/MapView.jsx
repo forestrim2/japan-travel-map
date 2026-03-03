@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { MapContainer, Marker, TileLayer, useMapEvents, CircleMarker } from "react-leaflet";
+import { MapContainer, Marker, TileLayer, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import { KJ_BOUNDS } from "../utils/bounds.js";
 
@@ -112,8 +112,10 @@ export default function MapView({
     const map = mapRef.current;
     try {
       map.flyTo([flyTo.lat, flyTo.lng], flyTo.zoom ?? 16, { duration: 0.8 });
+      try { map.panInsideBounds(map.getBounds()); } catch {}
     } catch {
-      try { map.setView([flyTo.lat, flyTo.lng], flyTo.zoom ?? 16); } catch {}
+      try { map.setView([flyTo.lat, flyTo.lng], flyTo.zoom ?? 16);
+        try { map.panInsideBounds(map.getBounds()); } catch {} } catch {}
     }
     requestAnimationFrame(() => { try { map.invalidateSize(); } catch {} });
   }, [flyTo]);
