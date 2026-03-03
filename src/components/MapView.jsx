@@ -31,28 +31,27 @@ export default function MapView({
   onMapPickForCreate,
   flyTo, // {lat,lng,zoom, pinId?, t?} | null
   userLocation,
-  sidebarOpenSignal // number that changes when sidebar opens/closes
+  invalidateSignal // number that changes when layout might change
 }) {
   const mapRef = useRef(null);
 
-  // 지도 크기 재계산(레이아웃 변경/모바일 드로어 열닫/리사이즈 대응)
-  useEffect(() => {
+  const invalidate = () => {
     const map = mapRef.current;
     if (!map) return;
-    const tick = () => {
-      try { map.invalidateSize(); } catch {}
-    };
-    tick();
-    const id = setTimeout(tick, 120);
-    return () => clearTimeout(id);
-  }, [sidebarOpenSignal]);
+    try { map.invalidateSize(); } catch {}
+  };
 
+  // 레이아웃 변경 시(사이드바 열닫/모드 변경 등) 지도 크기 재계산
   useEffect(() => {
-    const onResize = () => {
-      const map = mapRef.current;
-      if (!map) return;
-      try { map.invalidateSize(); } catch {}
-    };
+    invalidate();
+    const t1 = setTimeout(invalidate, 80);
+    const t2 = setTimeout(invalidate, 220);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [invalidateSignal]);
+
+  // 리사이즈 대응
+  useEffect(() => {
+    const onResize = () => invalidate();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -76,7 +75,16 @@ export default function MapView({
         maxBounds={KJ_BOUNDS}
         maxBoundsViscosity={1.0}
         style={{ height: "100%", width: "100%" }}
-        whenCreated={(map) => (mapRef.current = map)}
+        whenCreated={(map) => {
+          mapRef.current = map;
+          // 초기 렌더가 0px 너비로 잡히는 케이스 방지
+          requestAnimationFrame(() => {
+            try { map.invalidateSize(); } catch {}
+          });
+          setTimeout(() => {
+            try { map.invalidateSize(); } catch {}
+          }, 150);
+        }}
       >
         <TileLayer
           attribution='&copy; OpenStreetMap'

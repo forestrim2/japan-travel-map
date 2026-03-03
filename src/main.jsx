@@ -49,9 +49,23 @@ function App() {
   const [userLocation, setUserLocation] = useState(null);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarSignal, setSidebarSignal] = useState(0); // 지도 invalidate 트리거
+  const [invalidateSignal, setInvalidateSignal] = useState(0);
 
-  const isDesktop = useMemo(() => window.matchMedia?.("(min-width: 901px)")?.matches ?? true, []);
+  const [isDesktop, setIsDesktop] = useState(() => {
+    return window.matchMedia?.("(min-width: 901px)")?.matches ?? true;
+  });
+
+  useEffect(() => {
+    const mq = window.matchMedia?.("(min-width: 901px)");
+    if (!mq) return;
+    const onChange = () => {
+      setIsDesktop(mq.matches);
+      setInvalidateSignal(x => x + 1);
+    };
+    onChange();
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, []);
 
   const filteredPins = useMemo(() => {
     let out = pins;
@@ -92,6 +106,7 @@ function App() {
     (async () => {
       await ensureSeed();
       await refreshAll();
+      setInvalidateSignal(x => x + 1);
     })();
   }, []);
 
@@ -124,6 +139,7 @@ function App() {
     setExpandedCityIds(prev => new Set([...prev, id]));
     setSelectedCityId(id);
     setSelectedThemeId(null);
+    setInvalidateSignal(x => x + 1);
   }
 
   async function handleAddTheme(cityId) {
@@ -134,6 +150,7 @@ function App() {
     setExpandedCityIds(prev => new Set([...prev, cityId]));
     setSelectedCityId(cityId);
     setSelectedThemeId(null);
+    setInvalidateSignal(x => x + 1);
   }
 
   async function handleRenameCity(city) {
@@ -150,6 +167,7 @@ function App() {
     setSelectedThemeId(null);
     setSelectedPinId(null);
     await refreshAll();
+    setInvalidateSignal(x => x + 1);
   }
 
   async function handleRenameTheme(theme) {
@@ -165,14 +183,7 @@ function App() {
     setSelectedThemeId(null);
     setSelectedPinId(null);
     await refreshAll();
-  }
-
-  function openCreateEditor(pinDraft) {
-    setEditorState({ mode: "create", pin: pinDraft });
-  }
-
-  function openEditEditor(pin) {
-    setEditorState({ mode: "edit", pin });
+    setInvalidateSignal(x => x + 1);
   }
 
   async function handleSavePin(pinData) {
@@ -187,7 +198,7 @@ function App() {
       setSelectedPinId(id);
       setFlyTo({ lat: pinData.lat, lng: pinData.lng, zoom: 16, pinId: id, t: Date.now() });
     }
-    // 도시/테마는 최종 저장 기준으로 자동 맞춤
+
     if (pinData.cityId) {
       setSelectedCityId(pinData.cityId);
       setExpandedCityIds(prev => new Set([...prev, pinData.cityId]));
@@ -196,6 +207,7 @@ function App() {
 
     setEditorState(null);
     setAddMode(false);
+    setInvalidateSignal(x => x + 1);
   }
 
   async function handleDeletePin(id) {
@@ -280,13 +292,13 @@ function App() {
     setFlyTo({ lat, lng, zoom: 16, pinId: id, t: Date.now() });
 
     setSidebarOpen(false);
-    setSidebarSignal(x => x + 1);
+    setInvalidateSignal(x => x + 1);
   }
 
   function handlePickLocalPin(pin) {
     setFlyTo({ lat: pin.lat, lng: pin.lng, zoom: 16, pinId: pin.id, t: Date.now() });
     setSidebarOpen(false);
-    setSidebarSignal(x => x + 1);
+    setInvalidateSignal(x => x + 1);
   }
 
   async function handleMapPickForCreate(latlng) {
@@ -314,11 +326,9 @@ function App() {
       photos: editorState?.mode === "create" ? (editorState.pin.photos || []) : []
     };
 
-    // addMode 상태에서 여러 번 찍으면 팝업이 그 위치로 계속 업데이트
     setEditorState({ mode: "create", pin: nextDraft });
-
     setSidebarOpen(false);
-    setSidebarSignal(x => x + 1);
+    setInvalidateSignal(x => x + 1);
   }
 
   function handleMyLocation() {
@@ -331,7 +341,7 @@ function App() {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setUserLocation(loc);
         setFlyTo({ lat: loc.lat, lng: loc.lng, zoom: 14, t: Date.now() });
-        setSidebarSignal(x => x + 1);
+        setInvalidateSignal(x => x + 1);
       },
       () => alert("위치 권한이 필요합니다."),
       { enableHighAccuracy: true, timeout: 10000 }
@@ -354,11 +364,11 @@ function App() {
 
   function openSidebar() {
     setSidebarOpen(true);
-    setSidebarSignal(x => x + 1);
+    setInvalidateSignal(x => x + 1);
   }
   function closeSidebar() {
     setSidebarOpen(false);
-    setSidebarSignal(x => x + 1);
+    setInvalidateSignal(x => x + 1);
   }
 
   return (
@@ -405,11 +415,11 @@ function App() {
           onMapPickForCreate={handleMapPickForCreate}
           flyTo={flyTo}
           userLocation={userLocation}
-          sidebarOpenSignal={sidebarSignal}
+          invalidateSignal={invalidateSignal}
         />
 
         <div className="fabStack">
-          <button className="fab" title="핀 추가" onClick={() => { setAddMode(v => !v); setSidebarSignal(x => x + 1); }}>
+          <button className="fab" title="핀 추가" onClick={() => { setAddMode(v => !v); setInvalidateSignal(x => x + 1); }}>
             {addMode ? "✕" : "＋"}
           </button>
           <button className="fab" title="현위치" onClick={handleMyLocation}>⌖</button>
@@ -423,7 +433,7 @@ function App() {
             themes={themes}
             initialPin={editorState.pin}
             onSave={handleSavePin}
-            onClose={() => { setEditorState(null); setAddMode(false); }}
+            onClose={() => { setEditorState(null); setAddMode(false); setInvalidateSignal(x => x + 1); }}
           />
         ) : null}
 
@@ -431,7 +441,7 @@ function App() {
           <PinDetail
             pin={selectedPin}
             userLocation={userLocation}
-            onEdit={() => openEditEditor(selectedPin)}
+            onEdit={() => setEditorState({ mode: "edit", pin: selectedPin })}
             onDelete={() => handleDeletePin(selectedPin.id)}
             onClose={() => setSelectedPinId(null)}
           />
