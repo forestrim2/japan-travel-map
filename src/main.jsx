@@ -447,6 +447,8 @@ function App() {
             onClose={() => setSelectedPinId(null)}
           />
         ) : null}
+      
+        <div className="versionBadge">v0.3.9</div>
       </main>
     </div>
   );
