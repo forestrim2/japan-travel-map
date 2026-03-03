@@ -365,6 +365,12 @@ function App() {
         drawerOpen={drawerOpen}
         setDrawerOpen={setDrawerOpen}
         onQuickAdd={() => { setShowCatPicker(true); }}
+        onOpenGoogleSearch={(q) => {
+          const query = (q || '').trim();
+          if (!query) return;
+          const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+          window.open(url, '_blank');
+        }}
         cities={cities}
         themes={themes}
         pins={pins}
