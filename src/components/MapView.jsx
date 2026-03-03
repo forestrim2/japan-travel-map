@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { MapContainer, Marker, TileLayer, useMapEvents } from "react-leaflet";
+import { MapContainer, Marker, CircleMarker, TileLayer, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import { KJ_BOUNDS } from "../utils/bounds.js";
 
@@ -73,6 +73,12 @@ export default function MapView({
   userLocation,
   invalidateSignal
 }) {
+  function safeFlyTo(map, latlng, zoom) {
+    if (!map) return;
+    try { map.flyTo(latlng, zoom, { animate: true, duration: 0.8 }); }
+    catch { try { map.setView(latlng, zoom, { animate: true }); } catch {} }
+    try { setTimeout(() => map.invalidateSize(), 50); } catch {}
+  }
   const mapRef = useRef(null);
 
   // 타일(회색 화면) 방지: maxZoom 고정 + 타일 에러 누적 시 대체 서버로 전환
@@ -124,7 +130,12 @@ export default function MapView({
 
   return (
     <MapContainer
-      whenCreated={(m) => { mapRef.current = m; }}
+      whenCreated={(m) =
+        maxBounds={KJ_BOUNDS}
+        maxBoundsViscosity={1.0}
+        minZoom={5}
+        maxZoom={18}
+      > { mapRef.current = m; }}
       bounds={KJ_BOUNDS}
       style={{ width: "100%", height: "100%" }}
       zoomControl={true}

@@ -32,6 +32,8 @@ function IconX() {
 }
 
 export default function Sidebar({
+  onSearch,
+
   isMobile,
   drawerOpen,
   setDrawerOpen,

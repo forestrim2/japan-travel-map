@@ -746,3 +746,14 @@ button{font-family:inherit;}
   top:auto !important;
   z-index:4000 !important;
 }
+
+
+/* v1.1.6 - icon center fix */
+.iconBtn, .menuBtn, .locBtn, .fab{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.iconBtn svg, .menuBtn svg, .locBtn svg, .fab svg{
+  display:block;
+}

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import ErrorBoundary from "./components/ErrorBoundary.jsx";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -246,7 +247,7 @@ function App() {
     }
   }
 
-  async async function handlePickSearchResult(r) {
+  const handlePickSearchResult = async (r) => {
     const lat = Number(r.lat);
     const lng = Number(r.lon);
     setFlyTo({ lat, lng, zoom: 15, t: Date.now() });
@@ -327,7 +328,8 @@ function App() {
   }
 
   return (
-    <div className="app">
+    <ErrorBoundary>
+      <div className="app">
       <Sidebar
         isMobile={isMobile}
         drawerOpen={drawerOpen}
@@ -391,10 +393,16 @@ function App() {
                 <button
                   className="catBtn"
                   onClick={() => {
-                    const cityId = selectedCityId ?? null;
+                    let cityId = selectedCityId ?? null;
                     if (!cityId) {
-                      alert("먼저 도시를 추가해 주세요.");
-                      return;
+                      if (!cities?.length) { alert("먼저 도시를 추가해 주세요."); return; }
+                      const opts = cities.map((c, i) => `${i + 1}) ${c.name}`).join("
+");
+                      const pick = prompt(`테마를 추가할 도시를 선택해 주세요.
+${opts}`);
+                      const n = Number(String(pick || "").trim());
+                      if (!Number.isFinite(n) || n < 1 || n > cities.length) return;
+                      cityId = cities[n - 1].id;
                     }
                     setShowCatPicker(false);
                     handleAddTheme(cityId);
@@ -454,6 +462,7 @@ function App() {
         ) : null}
       </main>
     </div>
+    </ErrorBoundary>
   );
 }
 
