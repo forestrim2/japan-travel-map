@@ -254,3 +254,26 @@ button{font-family:inherit;}
   }
   .sidebar.open{transform:translateX(0);}
 }
+
+
+.locBtn{
+  position:fixed;
+  right:16px;
+  bottom:16px;
+  z-index:2000;
+  width:56px;
+  height:56px;
+  border-radius:22px;
+  border:1px solid var(--line);
+  background:#fff;
+  box-shadow:var(--shadow);
+  cursor:pointer;
+  display:grid;
+  place-items:center;
+  font-size:20px;
+}
+
+.fabStack{
+  right:16px;
+  bottom:86px; /* locBtn 위로 */
+}

@@ -13,13 +13,60 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png"
 });
 
-function ClickCatcher({ enabled, onPick }) {
+function AddHandlers({ enabledClick, onPick, enableLongPress }) {
+  const timerRef = useRef(null);
+  const startLatLngRef = useRef(null);
+  const movedRef = useRef(false);
+
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
   useMapEvents({
     click(e) {
-      if (!enabled) return;
+      if (!enabledClick) return;
       onPick(e.latlng);
+    },
+    // 모바일: 꾹 눌러 핀 추가(기본 550ms)
+    mousedown(e) {
+      if (!enableLongPress) return;
+      movedRef.current = false;
+      startLatLngRef.current = e.latlng;
+      clearTimer();
+      timerRef.current = setTimeout(() => {
+        if (movedRef.current) return;
+        onPick(startLatLngRef.current);
+      }, 550);
+    },
+    mouseup() {
+      clearTimer();
+    },
+    mousemove() {
+      // 드래그 이동 시 취소
+      if (timerRef.current) movedRef.current = true;
+    },
+    touchstart(e) {
+      if (!enableLongPress) return;
+      movedRef.current = false;
+      startLatLngRef.current = e.latlng;
+      clearTimer();
+      timerRef.current = setTimeout(() => {
+        if (movedRef.current) return;
+        onPick(startLatLngRef.current);
+      }, 550);
+    },
+    touchend() {
+      clearTimer();
+    },
+    touchmove() {
+      if (timerRef.current) movedRef.current = true;
     }
   });
+
+  useEffect(() => () => clearTimer(), []);
   return null;
 }
 
@@ -34,7 +81,6 @@ export default function MapView({
   invalidateSignal // number that changes when layout might change
 }) {
   const mapRef = useRef(null);
-  const wrapRef = useRef(null);
 
   const invalidate = () => {
     const map = mapRef.current;
@@ -42,39 +88,18 @@ export default function MapView({
     try { map.invalidateSize(); } catch {}
   };
 
-  // 가장 확실한 방법: 컨테이너 크기 변화 감지 시 invalidateSize
   useEffect(() => {
-    if (!wrapRef.current) return;
-    const el = wrapRef.current;
-
-    // ResizeObserver 지원
-    let ro = null;
-    if (typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(() => {
-        invalidate();
-      });
-      ro.observe(el);
-    }
-
-    // 초기 로드에서 CSS 적용 타이밍 때문에 생기는 "오른쪽 하얀 화면" 방지
     invalidate();
     const t1 = setTimeout(invalidate, 80);
     const t2 = setTimeout(invalidate, 220);
-    const t3 = setTimeout(invalidate, 600);
-    const t4 = setTimeout(invalidate, 1200);
-
-    return () => {
-      clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4);
-      try { ro?.disconnect?.(); } catch {}
-    };
-  }, []);
-
-  // 레이아웃 변경 시(사이드바 열닫/모드 변경 등)도 한 번 더
-  useEffect(() => {
-    invalidate();
-    const t = setTimeout(invalidate, 160);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [invalidateSignal]);
+
+  useEffect(() => {
+    const onResize = () => invalidate();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     if (!flyTo || !mapRef.current) return;
@@ -86,7 +111,7 @@ export default function MapView({
   const center = useMemo(() => [35.6, 134.6], []);
 
   return (
-    <div className="mapWrap" ref={wrapRef}>
+    <div className="mapWrap">
       <MapContainer
         center={center}
         zoom={6}
@@ -97,8 +122,12 @@ export default function MapView({
         style={{ height: "100%", width: "100%" }}
         whenCreated={(map) => {
           mapRef.current = map;
-          requestAnimationFrame(() => invalidate());
-          setTimeout(() => invalidate(), 150);
+          requestAnimationFrame(() => {
+            try { map.invalidateSize(); } catch {}
+          });
+          setTimeout(() => {
+            try { map.invalidateSize(); } catch {}
+          }, 150);
         }}
       >
         <TileLayer
@@ -106,9 +135,15 @@ export default function MapView({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        <ClickCatcher enabled={addMode} onPick={onMapPickForCreate} />
+        <AddHandlers
+          enabledClick={addMode}
+          enableLongPress={true}
+          onPick={onMapPickForCreate}
+        />
 
-        {userLocation ? <Marker position={[userLocation.lat, userLocation.lng]} /> : null}
+        {userLocation ? (
+          <Marker position={[userLocation.lat, userLocation.lng]} />
+        ) : null}
 
         {pins.map((p) => (
           <Marker

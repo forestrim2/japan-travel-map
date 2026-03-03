@@ -422,9 +422,10 @@ function App() {
           <button className="fab" title="핀 추가" onClick={() => { setAddMode(v => !v); setInvalidateSignal(x => x + 1); }}>
             {addMode ? "✕" : "＋"}
           </button>
-          <button className="fab" title="현위치" onClick={handleMyLocation}>⌖</button>
           <button className="fab" title="길찾기" onClick={handleDirections}>➤</button>
         </div>
+
+        <button className="locBtn" title="현위치" onClick={handleMyLocation}>⌖</button>
 
         {editorState ? (
           <PinEditor
