@@ -396,8 +396,7 @@ function App() {
                     let cityId = selectedCityId ?? null;
                     if (!cityId) {
                       if (!cities?.length) { alert("먼저 도시를 추가해 주세요."); return; }
-                      const opts = cities.map((c, i) => `${i + 1}) ${c.name}`).join("
-");
+                      const opts = cities.map((c, i) => `${i + 1}) ${c.name}`).join("\n");
                       const pick = prompt(`테마를 추가할 도시를 선택해 주세요.
 ${opts}`);
                       const n = Number(String(pick || "").trim());
