@@ -21,14 +21,11 @@ function IconX() {
     </svg>
   );
 }
-function Handle() {
-  return <div className="sheetHandle" />;
-}
-
 export default function Sidebar({
   isMobile,
-  sheetOpen,
-  setSheetOpen,
+  drawerOpen,
+  setDrawerOpen,
+  onQuickAdd,
 
   cities,
   themes,
@@ -78,32 +75,11 @@ export default function Sidebar({
     return { byCity, byTheme };
   }, [pins]);
 
-  // swipe up/down (mobile)
-  const touchStartY = useRef(null);
-  const onTouchStart = (e) => {
-    touchStartY.current = e.touches?.[0]?.clientY ?? null;
-  };
-  const onTouchEnd = (e) => {
-    const start = touchStartY.current;
-    touchStartY.current = null;
-    if (start == null) return;
-    const end = e.changedTouches?.[0]?.clientY ?? start;
-    const dy = end - start;
-    if (dy > 40) setSheetOpen(false);
-    if (dy < -40) setSheetOpen(true);
-  };
 
-  const wrapCls = isMobile ? `sidebar sheet ${sheetOpen ? "open" : "collapsed"}` : "sidebar";
+  const wrapCls = isMobile ? `sidebar drawer ${drawerOpen ? "open" : ""}` : "sidebar";
 
   return (
-    <aside className={wrapCls} onTouchStart={isMobile ? onTouchStart : undefined} onTouchEnd={isMobile ? onTouchEnd : undefined}>
-      {isMobile ? (
-        <div className="sheetTop" onClick={() => setSheetOpen(v => !v)}>
-          <Handle />
-          <div className="sheetTitle">목록</div>
-        </div>
-      ) : null}
-
+    <aside className={wrapCls}>
       <div className="sidebarHeader">
         <input
           className="searchInput"
@@ -115,8 +91,7 @@ export default function Sidebar({
           <button className="chip" onClick={onRunSearch} disabled={searchBusy}>
             {searchBusy ? "검색중…" : "검색"}
           </button>
-          <button className="chip" onClick={onAddCity}>+ 도시</button>
-        </div>
+                  </div>
 
         {searchHistory?.length ? (
           <>
@@ -231,9 +206,9 @@ export default function Sidebar({
       </div>
 
       <div className="sidebarFooter">
-        <div className="small">
-          지도 라벨을 한국어로 보려면 MapTiler 키가 필요합니다. (무료 플랜 가능) <br />
-          Vercel 환경변수: <b>VITE_MAPTILER_KEY</b>
+        <div className="footerRow">
+          <button className="footerAddBtn" title="추가" onClick={onQuickAdd}>+</button>
+          <button className="footerBtn" onClick={onAddCity}>도시 추가</button>
         </div>
       </div>
     </aside>

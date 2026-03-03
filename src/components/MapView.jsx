@@ -116,7 +116,7 @@ export default function MapView({
       <MapContainer
         center={center}
         zoom={6}
-        minZoom={5}
+        minZoom={6}
         maxZoom={18}
         maxBounds={KJ_BOUNDS}
         maxBoundsViscosity={1.0}
@@ -131,7 +131,7 @@ export default function MapView({
           }, 150);
         }}
       >
-        <TileLayer attribution={attribution} url={tileUrl} />
+        <TileLayer attribution={attribution} url={tileUrl} noWrap={true} />
 
         <AddHandlers enabledClick={addMode} enableLongPress={true} onPick={onMapPickForCreate} />
 

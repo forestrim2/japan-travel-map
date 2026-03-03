@@ -49,7 +49,7 @@ function App() {
   const [invalidateSignal, setInvalidateSignal] = useState(0);
 
   const [isMobile, setIsMobile] = useState(() => !(window.matchMedia?.("(min-width: 901px)")?.matches ?? true));
-  const [sheetOpen, setSheetOpen] = useState(false); // mobile bottom sheet
+  const [drawerOpen, setDrawerOpen] = useState(false); // mobile drawer
 
   useEffect(() => {
     const mq = window.matchMedia?.("(min-width: 901px)");
@@ -57,7 +57,7 @@ function App() {
     const onChange = () => {
       const mobile = !mq.matches;
       setIsMobile(mobile);
-      if (!mobile) setSheetOpen(false);
+      if (!mobile) setDrawerOpen(false);
       setInvalidateSignal(x => x + 1);
     };
     onChange();
@@ -286,13 +286,13 @@ function App() {
 
     setFlyTo({ lat, lng, zoom: 16, pinId: id, t: Date.now() });
 
-    if (isMobile) setSheetOpen(false);
+    if (isMobile) setDrawerOpen(false);
     setInvalidateSignal(x => x + 1);
   }
 
   function handlePickLocalPin(pin) {
     setFlyTo({ lat: pin.lat, lng: pin.lng, zoom: 16, pinId: pin.id, t: Date.now() });
-    if (isMobile) setSheetOpen(false);
+    if (isMobile) setDrawerOpen(false);
     setInvalidateSignal(x => x + 1);
   }
 
@@ -322,7 +322,7 @@ function App() {
     };
 
     setEditorState({ mode: "create", pin: nextDraft });
-    if (isMobile) setSheetOpen(false);
+    if (isMobile) setDrawerOpen(false);
     setInvalidateSignal(x => x + 1);
   }
 
@@ -361,8 +361,9 @@ function App() {
     <div className="app">
       <Sidebar
         isMobile={isMobile}
-        sheetOpen={sheetOpen}
-        setSheetOpen={setSheetOpen}
+        drawerOpen={drawerOpen}
+        setDrawerOpen={setDrawerOpen}
+        onQuickAdd={() => { setAddMode(true); setDrawerOpen(false); setInvalidateSignal(x => x + 1); }}
         cities={cities}
         themes={themes}
         pins={pins}
@@ -392,6 +393,15 @@ function App() {
       />
 
       <main className="main">
+        {isMobile ? (
+          <>
+            {drawerOpen ? <div className="drawerBackdrop" onClick={() => setDrawerOpen(false)} /> : null}
+            <button className="menuBtn" title="목록" onClick={() => setDrawerOpen(true)}>
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z"/></svg>
+            </button>
+          </>
+        ) : null}
+
         <MapView
           pins={filteredPins}
           selectedPinId={selectedPinId}
@@ -407,10 +417,14 @@ function App() {
           <button className="fab" title="핀 추가" onClick={() => { setAddMode(v => !v); setInvalidateSignal(x => x + 1); }}>
             {addMode ? "✕" : "＋"}
           </button>
-          <button className="fab" title="길찾기" onClick={handleDirections}>➤</button>
+          <button className="fab" title="길찾기" onClick={handleDirections}>
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M2 12l19-9-5 19-4-8-10-2zm11.5 1.2 2.2 4.4 2.6-9.8-9.8 2.6 5 2.8z"/></svg>
+          </button>
         </div>
 
-        <button className="locBtn" title="현위치" onClick={handleMyLocation}>⌖</button>
+        <button className="locBtn" title="현위치" onClick={handleMyLocation}>
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 2h2v3.06A7.002 7.002 0 0 1 18.94 11H22v2h-3.06A7.002 7.002 0 0 1 13 18.94V22h-2v-3.06A7.002 7.002 0 0 1 5.06 13H2v-2h3.06A7.002 7.002 0 0 1 11 5.06V2zm1 5a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 3a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>
+        </button>
 
         {editorState ? (
           <PinEditor
