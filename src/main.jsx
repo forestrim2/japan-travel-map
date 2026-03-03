@@ -50,6 +50,7 @@ function App() {
 
   const [isMobile, setIsMobile] = useState(() => !(window.matchMedia?.("(min-width: 901px)")?.matches ?? true));
   const [drawerOpen, setDrawerOpen] = useState(false); // mobile drawer
+  const [showCatPicker, setShowCatPicker] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia?.("(min-width: 901px)");
@@ -363,24 +364,7 @@ function App() {
         isMobile={isMobile}
         drawerOpen={drawerOpen}
         setDrawerOpen={setDrawerOpen}
-        onQuickAdd={() => {
-          const pick = prompt("추가할 분류를 선택해 주세요.\n1) 도시\n2) 테마");
-          if (!pick) return;
-          const v = pick.trim();
-          if (v === "1" || v.toLowerCase() === "city" || v.includes("도시")) {
-            handleAddCity();
-            return;
-          }
-          if (v === "2" || v.toLowerCase() === "theme" || v.includes("테마")) {
-            const cityId = selectedCityId ?? cities[0]?.id ?? null;
-            if (!cityId) {
-              alert("먼저 도시를 추가해 주세요.");
-              return;
-            }
-            handleAddTheme(cityId);
-            return;
-          }
-        }}
+        onQuickAdd={() => { setShowCatPicker(true); }}
         cities={cities}
         themes={themes}
         pins={pins}
@@ -417,6 +401,41 @@ function App() {
               <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z"/></svg>
             </button>
           </>
+        ) : null}
+
+        
+        {showCatPicker ? (
+          <div className="catPickerOverlay" onClick={() => setShowCatPicker(false)}>
+            <div className="catPicker" onClick={(e) => e.stopPropagation()}>
+              <div className="catPickerTitle">추가할 분류 선택</div>
+              <div className="catPickerBtns">
+                <button
+                  className="catBtn"
+                  onClick={() => {
+                    setShowCatPicker(false);
+                    handleAddCity();
+                  }}
+                >
+                  도시 추가
+                </button>
+                <button
+                  className="catBtn"
+                  onClick={() => {
+                    const cityId = selectedCityId ?? cities[0]?.id ?? null;
+                    if (!cityId) {
+                      alert("먼저 도시를 추가해 주세요.");
+                      return;
+                    }
+                    setShowCatPicker(false);
+                    handleAddTheme(cityId);
+                  }}
+                >
+                  테마 추가
+                </button>
+              </div>
+              <button className="catCancel" onClick={() => setShowCatPicker(false)}>취소</button>
+            </div>
+          </div>
         ) : null}
 
         <MapView
