@@ -250,45 +250,11 @@ function App() {
     const lat = Number(r.lat);
     const lng = Number(r.lon);
 
-    // 바로 이동
+    // 지도 이동만 먼저
     setFlyTo({ lat, lng, zoom: 15, t: Date.now() });
 
-    const addr = await fillAddressesFor(lat, lng);
-    const title = (r.name || r.display_name || "").split(",")[0] || addr.nameFromKo || "저장한 장소";
-
-    const cityId = selectedCityId ?? cities[0]?.id ?? null;
-    const themeId =
-      selectedThemeId ??
-      themes.find(t => t.cityId === cityId)?.id ??
-      null;
-
-    const pinData = {
-      lat,
-      lng,
-      cityId,
-      themeId,
-      name: title,
-      addressJa: addr.addressJa,
-      addressKo: addr.addressKo,
-      memo: "",
-      links: [],
-      photos: []
-    };
-
-    const id = await addPin(pinData);
-    await refreshAll();
-
-    if (cityId) {
-      setSelectedCityId(cityId);
-      setExpandedCityIds(prev => new Set([...prev, cityId]));
-    }
-    setSelectedThemeId(themeId ?? null);
-    setSelectedPinId(id);
-
-    setFlyTo({ lat, lng, zoom: 16, pinId: id, t: Date.now() });
-
-    if (isMobile) setDrawerOpen(false);
-    setInvalidateSignal(x => x + 1);
+    // 자동 저장 금지: 편집창(핀 저장)을 열어 사용자가 분류/내용 확인 후 저장
+    await handleMapPickForCreate({ lat, lng });
   }
 
   function handlePickLocalPin(pin) {

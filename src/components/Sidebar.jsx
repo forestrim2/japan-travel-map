@@ -126,7 +126,7 @@ export default function Sidebar({
 
         {searchResults?.length ? (
           <>
-            <div className="sectionTitle">검색 결과(클릭하면 자동 저장)</div>
+            <div className="sectionTitle">검색 결과(클릭하면 핀 저장창 열림)</div>
             {searchResults.map((r, idx) => (
               <div
                 key={idx}
