@@ -364,9 +364,7 @@ function App() {
         drawerOpen={drawerOpen}
         setDrawerOpen={setDrawerOpen}
         onQuickAdd={() => {
-          const pick = prompt("추가할 분류를 선택해 주세요.
-1) 도시
-2) 테마");
+          const pick = prompt("추가할 분류를 선택해 주세요.\n1) 도시\n2) 테마");
           if (!pick) return;
           const v = pick.trim();
           if (v === "1" || v.toLowerCase() === "city" || v.includes("도시")) {
