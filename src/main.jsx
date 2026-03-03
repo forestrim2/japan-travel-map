@@ -74,15 +74,15 @@ function App() {
   }, [pins, selectedCityId, selectedThemeId]);
 
   const localResults = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return [];
-    return pins
-      .filter(p => {
-        const hay = `${p.name||""} ${p.memo||""} ${p.addressKo||""} ${p.addressJa||""}`.toLowerCase();
-        return hay.includes(q);
-      })
-      .slice(0, 6);
-  }, [searchQuery, pins]);
+    // 소분류(테마) 선택 시: 해당 테마의 핀 목록
+    let out = pins;
+    if (selectedCityId) out = out.filter(p => p.cityId === selectedCityId);
+    if (selectedThemeId) out = out.filter(p => p.themeId === selectedThemeId);
+    return out
+      .slice()
+      .sort((a,b) => String(a.name||"").localeCompare(String(b.name||""),"ko"))
+      .slice(0, 50);
+  }, [pins, selectedCityId, selectedThemeId]);
 
   async function refreshAll() {
     const [c, t, p] = await Promise.all([
@@ -246,19 +246,18 @@ function App() {
     }
   }
 
-  async function autoSaveFromSearchResult(r) {
+  async function handlePickSearchResult(r) {
     const lat = Number(r.lat);
     const lng = Number(r.lon);
-
-    // 지도 이동만 먼저
     setFlyTo({ lat, lng, zoom: 15, t: Date.now() });
-
-    // 자동 저장 금지: 편집창(핀 저장)을 열어 사용자가 분류/내용 확인 후 저장
     await handleMapPickForCreate({ lat, lng });
   }
 
-  function handlePickLocalPin(pin) {
-    setFlyTo({ lat: pin.lat, lng: pin.lng, zoom: 16, pinId: pin.id, t: Date.now() });
+
+  function handlePickLocalPin(id) {
+    const pin = pins.find(p => p.id === id);
+    if (!pin) return;
+    setFlyTo({ lat: Number(pin.lat), lng: Number(pin.lng), zoom: 17, t: Date.now() });
     if (isMobile) setDrawerOpen(false);
     setInvalidateSignal(x => x + 1);
   }
@@ -351,7 +350,7 @@ function App() {
         searchHistory={searchHistory}
         onPickHistory={(q) => { setSearchQuery(q); runSearch(q); }}
         onDeleteHistory={deleteHistoryItem}
-        onPickSearchResult={autoSaveFromSearchResult}
+        onPickSearchResult={handlePickSearchResult}
         localResults={localResults}
         onPickLocalPin={handlePickLocalPin}
         selectedPinId={selectedPinId}

@@ -102,7 +102,7 @@ export default function Sidebar({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") onRunSearch();
+            if (e.key === "Enter") { e.preventDefault(); onRunSearch(); }
           }}
         />
         <div className="inlineBtns">
@@ -157,7 +157,7 @@ export default function Sidebar({
                 key={p.id}
                 className={`resultItem ${p.id === selectedPinId ? "active" : ""}`}
                 onClick={() => {
-                  onPickLocalPin(p);
+                  onPickLocalPin(p.id);
                   if (isMobile) setDrawerOpen(false);
                 }}
               >
@@ -252,7 +252,7 @@ export default function Sidebar({
                   className={`pinListItem ${p.id === selectedPinId ? "active" : ""}`}
                   onClick={() => {
                     onSelectPin?.(p.id);
-                    onPickLocalPin(p);
+                    onPickLocalPin(p.id);
                     if (isMobile) setDrawerOpen(false);
                   }}
                 >

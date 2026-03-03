@@ -25,6 +25,8 @@ function AddHandlers({ enabledClick, onPick, enableLongPress }) {
     }
   };
 
+  useEffect(() => () => clearTimer(), []);
+
   useMapEvents({
     click(e) {
       if (!enabledClick) return;
@@ -43,6 +45,7 @@ function AddHandlers({ enabledClick, onPick, enableLongPress }) {
     },
     mouseup() { clearTimer(); },
     mousemove() { if (timerRef.current) movedRef.current = true; },
+
     touchstart(e) {
       if (!enableLongPress) return;
       movedRef.current = false;
@@ -57,7 +60,6 @@ function AddHandlers({ enabledClick, onPick, enableLongPress }) {
     touchmove() { if (timerRef.current) movedRef.current = true; }
   });
 
-  useEffect(() => () => clearTimer(), []);
   return null;
 }
 
@@ -73,7 +75,7 @@ export default function MapView({
 }) {
   const mapRef = useRef(null);
 
-  // Tile handling: prevent grey screen on over-zoom / transient tile failures.
+  // 타일(회색 화면) 방지: maxZoom 고정 + 타일 에러 누적 시 대체 서버로 전환
   const TILE_PRIMARY = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
   const TILE_FALLBACK_1 = "https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png";
   const TILE_FALLBACK_2 = "https://tile.openstreetmap.jp/{z}/{x}/{y}.png";
@@ -82,8 +84,8 @@ export default function MapView({
   const [tileErr, setTileErr] = useState(0);
 
   useEffect(() => {
-    if (tileErr > 18 && tileUrl === TILE_PRIMARY) setTileUrl(TILE_FALLBACK_1);
-    if (tileErr > 36 && tileUrl === TILE_FALLBACK_1) setTileUrl(TILE_FALLBACK_2);
+    if (tileErr > 20 && tileUrl === TILE_PRIMARY) setTileUrl(TILE_FALLBACK_1);
+    if (tileErr > 45 && tileUrl === TILE_FALLBACK_1) setTileUrl(TILE_FALLBACK_2);
   }, [tileErr, tileUrl]);
 
   const invalidate = () => {
@@ -96,83 +98,87 @@ export default function MapView({
     invalidate();
     const t1 = setTimeout(invalidate, 80);
     const t2 = setTimeout(invalidate, 220);
-    const attribution = '&copy; OpenStreetMap contributors';
-
-  return () => { clearTimeout(t1); clearTimeout(t2); };
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [invalidateSignal]);
 
   useEffect(() => {
     const onResize = () => invalidate();
     window.addEventListener("resize", onResize);
-    const attribution = '&copy; OpenStreetMap contributors';
-
-  return () => window.removeEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, []);
 
   useEffect(() => {
     if (!flyTo || !mapRef.current) return;
     const map = mapRef.current;
     try {
-      map.flyTo([flyTo.lat, flyTo.lng], flyTo.zoom ?? 14, { duration: 0.8 });
+      map.flyTo([flyTo.lat, flyTo.lng], flyTo.zoom ?? 16, { duration: 0.8 });
     } catch {
-      try { map.setView([flyTo.lat, flyTo.lng], flyTo.zoom ?? 14); } catch {}
+      try { map.setView([flyTo.lat, flyTo.lng], flyTo.zoom ?? 16); } catch {}
     }
-    // If the map is in a bad size state (mobile drawer), force a repaint.
     requestAnimationFrame(() => { try { map.invalidateSize(); } catch {} });
+  }, [flyTo]);
 
-    if (flyTo.pinId) onSelectPin(flyTo.pinId);
-  }, [flyTo?.lat, flyTo?.lng, flyTo?.zoom, flyTo?.pinId, flyTo?.t]);
-
-  const center = useMemo(() => [35.6, 134.6], []);
-
-  const attribution = '&copy; OpenStreetMap contributors';
+  const markers = useMemo(() => pins || [], [pins]);
 
   return (
-    <div className="mapWrap">
-      <MapContainer
-        center={center}
-        zoom={6}
-        minZoom={6}
+    <MapContainer
+      whenCreated={(m) => { mapRef.current = m; }}
+      bounds={KJ_BOUNDS}
+      style={{ width: "100%", height: "100%" }}
+      zoomControl={true}
+      minZoom={5}
+      maxZoom={18}
+      maxBounds={KJ_BOUNDS}
+      maxBoundsViscosity={0.9}
+      worldCopyJump={false}
+    >
+      <TileLayer
+        url={tileUrl}
+        maxNativeZoom={18}
         maxZoom={18}
-        maxBounds={KJ_BOUNDS}
-        maxBoundsViscosity={1.0}
-        style={{ height: "100%", width: "100%" }}
-        whenCreated={(map) => {
-          mapRef.current = map;
-          requestAnimationFrame(() => {
-            try { map.invalidateSize(); } catch {}
-          });
-          setTimeout(() => {
-            try { map.invalidateSize(); } catch {}
-          }, 150);
-        }}
-      >
-        <TileLayer attribution={attribution} url={tileUrl} noWrap={true} maxNativeZoom={18}
-          eventHandlers={{ tileerror: () => setTileErr((c) => c + 1) }}
+        eventHandlers={{ tileerror: () => setTileErr((c) => c + 1) }}
+        attribution='&copy; OpenStreetMap contributors'
+      />
+
+      <AddHandlers
+        enabledClick={addMode}
+        enableLongPress={true}
+        onPick={(latlng) => onMapPickForCreate(latlng)}
+      />
+
+      {userLocation ? (
+        <CircleMarker
+          center={[userLocation.lat, userLocation.lng]}
+          radius={7}
+          pathOptions={{ weight: 2, opacity: 1, fillOpacity: 0.45 }}
         />
+      ) : null}
 
-        <AddHandlers enabledClick={addMode} enableLongPress={true} onPick={onMapPickForCreate} />
+      {markers.map((p) => {
+        const lat = Number(p.lat);
+        const lng = Number(p.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
 
-        {userLocation ? <Marker position={[userLocation.lat, userLocation.lng]} /> : null}
+        const isSel = selectedPinId === p.id;
+        return (
+          <React.Fragment key={p.id}>
+            {isSel ? (
+              <CircleMarker
+                center={[lat, lng]}
+                radius={14}
+                pathOptions={{ weight: 3, opacity: 1, fillOpacity: 0 }}
+              />
+            ) : null}
 
-        {pins.map((p) => {
-          const active = p.id === selectedPinId;
-          return (
-            <CircleMarker
-              key={p.id}
-              center={[p.lat, p.lng]}
-              radius={8}
-              pathOptions={{
-                weight: active ? 3 : 2,
-                opacity: 1,
-                fillOpacity: 0.9,
-                color: active ? "#111" : "#555"
+            <Marker
+              position={[lat, lng]}
+              eventHandlers={{
+                click: () => onSelectPin(p.id)
               }}
-              eventHandlers={{ click: () => onSelectPin(p.id) }}
             />
-          );
-        })}
-      </MapContainer>
-    </div>
+          </React.Fragment>
+        );
+      })}
+    </MapContainer>
   );
 }
