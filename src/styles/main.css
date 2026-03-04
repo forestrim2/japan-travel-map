@@ -72,3 +72,44 @@ textarea{resize:vertical;}
 .photoSlider .photoFrame{border:1px solid var(--line);border-radius:14px;overflow:hidden;width:100%;max-width:520px;}
 .photoSlider img{width:100%;height:260px;object-fit:cover;display:block;}
 @media (min-width:980px){.sidebar{position:relative;box-shadow:none;}.overlay{display:none;}.topbar{left:360px;}.mapWrap{margin-left:360px;}}
+
+/* --- Minimal sidebar overrides (v3.0.1) --- */
+.cityBlock{ border:0 !important; border-radius:0 !important; padding:0 !important; background:transparent !important; }
+.themeBlock{ border-left:0 !important; padding-left:0 !important; }
+.themeList{ padding-left:18px !important; border-left:1px solid var(--line); margin-left:12px; }
+.pinList{ padding-left:12px !important; }
+
+.twisty{ width:22px !important; height:22px !important; border-radius:8px !important; }
+.iconBtn{ width:30px !important; height:30px !important; border-radius:10px !important; }
+.nameBtn{ padding:6px 6px !important; }
+.pinName{ padding:6px 6px !important; }
+
+.addBtn{ border:1px solid var(--line) !important; border-radius:12px !important; padding:10px 12px !important; }
+
+/* Topbar removed */
+.mapWrap{ padding-top:0 !important; }
+.map{ height:100vh !important; }
+
+/* Mobile hamburger bottom-left */
+.hamburgerFab{
+  position:absolute;
+  left:14px;
+  bottom:14px;
+  width:44px;
+  height:44px;
+  border-radius:16px;
+  border:1px solid var(--line);
+  background:#fff;
+  cursor:pointer;
+  font-size:18px;
+  font-weight:900;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:600;
+}
+
+/* Sidebar close button hidden on desktop */
+@media (min-width: 980px){
+  .sideHeader .btn.ghost{ display:none; }
+}

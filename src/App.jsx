@@ -391,9 +391,6 @@ export default function App() {
         syncAvailable={syncAvailable}
       />
 
-      <div className="topbar">
-        <button className="hamburger" onClick={() => setSidebarOpen((p) => !p)} title="목록">☰</button>
-        <div className="topbarTitle">지도</div>
       </div>
 
       <div className="mapWrap">
@@ -408,6 +405,8 @@ export default function App() {
           onSelectPin={(id) => viewPin(id)}
         />
         <div className="fabs">
+          <button className="hamburgerFab" onClick={() => setSidebarOpen(true)} title="목록">☰</button>
+
           <button className={"fab" + (addMode ? " active" : "")} title="핀 저장 모드" onClick={() => setAddMode((p) => !p)}>+</button>
           <LocationButton onClick={goToCurrent} />
         </div>
