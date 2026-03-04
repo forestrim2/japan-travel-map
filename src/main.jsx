@@ -529,6 +529,7 @@ function Sidebar({
   searchResults,
   recentSearches,
   onPickSearchResult,
+  onDeleteRecent,
 }) {
   const countCity = (cityId) => pins.filter((p) => p.cityId === cityId).length;
   const countTheme = (themeId) => pins.filter((p) => p.themeId === themeId).length;
@@ -599,7 +600,7 @@ function Sidebar({
                 <div className="sectionTitle" style={{margin: "6px 0"}}>최근 검색</div>
                 <div style={{display:"flex", flexWrap:"wrap", gap:8}}>
                   {recentSearches.map((t) => (
-                    <div key={t} className="recentChip" onClick={() => { setMapQuery(t); setTimeout(() => onRunMapSearch?.(), 0); }}>
+                    <div key={t} className="recentChip" onClick={() => { setMapQuery(t); setTimeout(() => onRunMapSearch?.(t), 0); }}>
                       <span style={{maxWidth:180, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{t}</span>
                       <button
                         className="x"
@@ -607,7 +608,6 @@ function Sidebar({
                         onClick={(e) => {
                           e.stopPropagation();
                           // delete only this item
-                          const next = recentSearches.filter((x) => x !== t);
                           // we can't setRecentSearches here (in Sidebar), so call handler if provided
                           onDeleteRecent?.(t);
                         }}
@@ -787,6 +787,12 @@ const [mapQuery, setMapQuery] = useState("");
 const [searching, setSearching] = useState(false);
 const [searchResults, setSearchResults] = useState([]); // {id,name,displayName,lat,lng}
 const [recentSearches, setRecentSearches] = useState([]); // strings
+
+const deleteRecentSearch = (term) => {
+  const t = String(term || "").trim();
+  if (!t) return;
+  setRecentSearches((prev) => prev.filter((x) => x !== t));
+};
 
 const runMapSearch = async () => {
   const q = mapQuery.trim();
