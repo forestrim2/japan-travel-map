@@ -75,6 +75,20 @@ function openGoogleByAddress(addr) {
   );
 }
 
+/** --------- Geocoding (reverse) ---------- */
+async function reverseGeocode(lat, lng, lang) {
+  const url =
+    "https://nominatim.openstreetmap.org/reverse?format=json&zoom=18&addressdetails=1&lat=" +
+    encodeURIComponent(lat) +
+    "&lon=" +
+    encodeURIComponent(lng) +
+    "&accept-language=" +
+    encodeURIComponent(lang || "ko");
+  const res = await fetch(url, { headers: { "Accept-Language": lang || "ko" } });
+  const data = await res.json();
+  return String(data?.display_name || "");
+}
+
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -806,12 +820,10 @@ const pickSearchResult = (r) => {
   if (!r) return;
   setFlyTarget([r.lat, r.lng]);
   setFlyZoom(16);
-  // Open pin modal at searched location (NO auto-save)
-  setDraftLatLng({ lat: r.lat, lng: r.lng });
-  setPinPrefill({ name: r.name || "", jpAddr: r.displayName || "", krAddr: "" });
-  setPinModalOpen(true);
+  setSearchFocus({ lat: r.lat, lng: r.lng, name: r.name || "" });
   setSidebarOpen(false);
 };
+
 
 
   const [addCatOpen, setAddCatOpen] = useState(false);
@@ -824,6 +836,7 @@ const pickSearchResult = (r) => {
 
   const [userLoc, setUserLoc] = useState(null);
   const [addingPinMode, setAddingPinMode] = useState(false);
+  const [searchFocus, setSearchFocus] = useState(null); // {lat,lng,name}
 
   useEffect(() => {
     saveState({
@@ -906,11 +919,22 @@ const pickSearchResult = (r) => {
     if (selectedThemeId === themeId) setSelectedThemeId("");
   };
 
-  const openPinModalAt = (latlng) => {
-    setDraftLatLng(latlng);
-    setPinPrefill({ name: "", jpAddr: "", krAddr: "" });
-    setPinModalOpen(true);
-  };
+  const openPinModalAt = async (latlng) => {
+  setDraftLatLng(latlng);
+  setPinPrefill({ name: "", jpAddr: "", krAddr: "" });
+  setPinModalOpen(true);
+  // auto fetch address (ko + ja) for the clicked location
+  try {
+    const [ko, ja] = await Promise.all([
+      reverseGeocode(latlng.lat, latlng.lng, "ko"),
+      reverseGeocode(latlng.lat, latlng.lng, "ja"),
+    ]);
+    setPinPrefill((p) => ({ ...p, krAddr: ko || p.krAddr, jpAddr: ja || p.jpAddr }));
+  } catch (e) {
+    console.warn(e);
+  }
+};
+
 
   const savePin = (data) => {
     const cityId = data.cityId || cities[0]?.id || "";
@@ -1029,6 +1053,7 @@ const pickSearchResult = (r) => {
             enabled={addingPinMode}
             onPick={(latlng) => {
               setAddingPinMode(false);
+              setSearchFocus(null);
               openPinModalAt(latlng);
             }}
           />
@@ -1058,6 +1083,14 @@ const pickSearchResult = (r) => {
               </React.Fragment>
             );
           })}
+
+{searchFocus ? (
+  <CircleMarker
+    center={[searchFocus.lat, searchFocus.lng]}
+    radius={10}
+    pathOptions={{ weight: 3, opacity: 1, fillOpacity: 0.15, color: "#111" }}
+  />
+) : null}
 
           {userLoc ? (
             <CircleMarker

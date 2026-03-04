@@ -252,3 +252,29 @@ html,body{height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Ro
     z-index:1150;
   }
 }
+
+
+/* v2.2.1 - modal mobile safe + add-mode indicator */
+.modal{
+  max-height: 92vh;
+  display:flex;
+  flex-direction:column;
+}
+.modalBody{ overflow:auto; }
+.modalFooter{ flex:0 0 auto; }
+.fab.active{
+  border-color:#111;
+  transform: translateZ(0);
+}
+.addModeHint{
+  position:absolute;
+  right:68px;
+  bottom:24px;
+  z-index:1100;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:999px;
+  padding:8px 12px;
+  font-weight:900;
+  box-shadow: var(--shadow);
+}
