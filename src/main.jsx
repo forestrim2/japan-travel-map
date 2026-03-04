@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "leaflet/dist/leaflet.css";
 import "./styles.css";
+import { hasSyncConfig, syncPull, syncPush } from "./utils/sync.js";
 import L from "leaflet";
 import {
   MapContainer,
@@ -76,6 +77,17 @@ function openGoogleByAddress(addr) {
 }
 
 /** --------- Geocoding (reverse) ---------- */
+function makeGoogleMapsQueryUrl(addr) {
+  const q = String(addr || "").trim();
+  if (!q) return "";
+  return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
+}
+function openGoogleByAddress(addr) {
+  const url = makeGoogleMapsQueryUrl(addr);
+  if (!url) return;
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 async function reverseGeocode(lat, lng, lang) {
   const url =
     "https://nominatim.openstreetmap.org/reverse?format=json&zoom=18&addressdetails=1&lat=" +
@@ -263,6 +275,72 @@ function AddCategoryModal({ cities, onAddCity, onAddTheme, onClose }) {
         />
       </div>
     </Modal>
+  );
+}
+
+function PinViewModal({ pin, onClose, onEdit }) {
+  if (!pin) return null;
+  return (
+    <div className="modalOverlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modalHeader">
+          <div className="modalTitle">{pin.name || "이름 없음"}</div>
+          <div className="modalActions">
+            <button className="btn" onClick={onEdit}>수정</button>
+            <button className="btn ghost" onClick={onClose}>닫기</button>
+          </div>
+        </div>
+
+        <div className="modalBody">
+          <div className="field">
+            <div className="label">일본 주소</div>
+            <div className="value">{pin.jpAddr || "-"}</div>
+          </div>
+          <div className="field">
+            <div className="label">한국 주소</div>
+            <div className="value">{pin.krAddr || "-"}</div>
+          </div>
+          <div className="field">
+            <div className="label">구글 로드뷰</div>
+            <div className="value">
+              <a href={makeGoogleMapsQueryUrl((pin.krAddr || pin.jpAddr || "").trim())} target="_blank" rel="noreferrer">
+                주소로 열기
+              </a>
+            </div>
+          </div>
+          <div className="field">
+            <div className="label">메모</div>
+            <div className="value" style={{whiteSpace:"pre-wrap"}}>{pin.memo || ""}</div>
+          </div>
+          <div className="field">
+            <div className="label">링크</div>
+            <div className="value">
+              {(pin.links || []).length ? (
+                <ul style={{margin:0, paddingLeft:18}}>
+                  {pin.links.map((u, i) => (
+                    <li key={i}>
+                      <a href={u} target="_blank" rel="noreferrer">{u}</a>
+                    </li>
+                  ))}
+                </ul>
+              ) : "-"}
+            </div>
+          </div>
+          <div className="field">
+            <div className="label">사진</div>
+            <div className="value">
+              {(pin.photos || []).length ? (
+                <div className="photoStrip">
+                  {pin.photos.map((src, i) => (
+                    <img key={i} src={src} alt={"photo"+i} className="photoThumb" />
+                  ))}
+                </div>
+              ) : "-"}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -526,35 +604,46 @@ useEffect(() => {
 }
 
 function Sidebar({
-  open,
+  // data
   cities,
-  themesByCity,
+  themes,
   pins,
+  // folder UI
+  openCityIds,
+  toggleCityOpen,
   selectedCityId,
   setSelectedCityId,
-  expandedCityIds,
-  toggleCityExpanded,
   selectedThemeId,
   setSelectedThemeId,
+  openThemeId,
+  setOpenThemeId,
   selectedPinId,
   onSelectPin,
-  onRenameCity,
-  onDeleteCity,
-  onRenameTheme,
-  onDeleteTheme,
-  onOpenAddCategory,
-  query,
-  setQuery,
+  onViewPin,
+
+  // search
   mapQuery,
   setMapQuery,
   onRunMapSearch,
-  searching,
   searchResults,
+  searchError,
   recentSearches,
   onPickSearchResult,
   onDeleteRecent,
   onClearSearch,
+
+  // actions
+  onAddPlus,
+  addMode,
+  onAddCity,
+  onAddTheme,
+  onEditCity,
+  onDeleteCity,
+  onEditTheme,
+  onDeleteTheme,
+  onMoveTheme,
 }) {
+
   const countCity = (cityId) => pins.filter((p) => p.cityId === cityId).length;
   const countTheme = (themeId) => pins.filter((p) => p.themeId === themeId).length;
 
@@ -787,6 +876,9 @@ function Sidebar({
 }
 
 function App() {
+  const SYNC_KEY = "default";
+  const [syncEnabled, setSyncEnabled] = useState(hasSyncConfig());
+
   const confirmDanger = (msg) => window.confirm(msg || '정말 삭제하십니까?');
 
   const loaded = loadState();
@@ -860,6 +952,17 @@ const runMapSearch = async () => {
   } finally {
     setSearching(false);
   }
+};
+
+const viewPin = (pinId) => {
+  setSelectedPinId(pinId);
+  const pin = pins.find((p) => p.id === pinId);
+  if (pin && mapRef?.current) {
+    try {
+      mapRef.current.flyTo([pin.lat, pin.lng], 16, { animate: true, duration: 0.6 });
+    } catch (e) {}
+  }
+  setViewPinId(pinId);
 };
 
 const pickSearchResult = (r) => {
@@ -1007,6 +1110,7 @@ const movePin = (pinId) => {
   };
 
   const openPinModalAt = async (latlng) => {
+  try {
   setDraftLatLng(latlng);
   setPinPrefill({ name: "", jpAddr: "", krAddr: "" });
   setPinModalOpen(true);
@@ -1021,6 +1125,11 @@ const jp = (ja || ko || "");
 setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }));
   } catch (e) {
     console.warn(e);
+  }
+  } catch (e) {
+    console.error(e);
+    // fail-safe: still open modal with empty addresses
+    setPinPrefill((p) => ({ ...p }));
   }
 };
 
@@ -1119,6 +1228,14 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
         onPickSearchResult={pickSearchResult}
         onDeleteRecent={deleteRecentSearch}
         onClearSearch={clearMapSearchResults}
+        cities={cities}
+        themes={themes}
+        pins={pins}
+        openThemeId={openThemeId}
+        setOpenThemeId={setOpenThemeId}
+        selectedPinId={selectedPinId}
+        onSelectPin={(id) => setSelectedPinId(id)}
+        onViewPin={viewPin}
       />
 
       <div className="mapWrap">
@@ -1250,7 +1367,15 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
         ) : null}
 
         {pinModalOpen ? (
-          <PinModal
+          {viewPinId && (
+        <PinViewModal
+          pin={pins.find((p) => p.id === viewPinId)}
+          onClose={() => setViewPinId(null)}
+          onEdit={() => { setEditPinId(viewPinId); setViewPinId(null); setIsPinModalOpen(true); }}
+        />
+      )}
+
+      <PinModal
             cities={cities}
             themesByCity={themesByCity}
             initialCityId={selectedCityId || cities[0]?.id || ""}
