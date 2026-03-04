@@ -43,7 +43,7 @@ const iconRed = new L.Icon({
 
 const KJ_BOUNDS = L.latLngBounds(L.latLng(30.0, 122.0), L.latLng(46.5, 146.5));
 const DEFAULT_CENTER = [36.2, 134.5];
-const DEFAULT_ZOOM = 5;
+const DEFAULT_ZOOM = 6;
 
 const LS_KEY = "travel_pin_map_v2";
 function loadState() {
@@ -599,13 +599,22 @@ function Sidebar({
                 <div className="sectionTitle" style={{margin: "6px 0"}}>최근 검색</div>
                 <div style={{display:"flex", flexWrap:"wrap", gap:8}}>
                   {recentSearches.map((t) => (
-                    <button
-                      key={t}
-                      className="smallBtn"
-                      onClick={() => { setMapQuery(t); setTimeout(() => onRunMapSearch?.(), 0); }}
-                    >
-                      {t}
-                    </button>
+                    <div key={t} className="recentChip" onClick={() => { setMapQuery(t); setTimeout(() => onRunMapSearch?.(), 0); }}>
+                      <span style={{maxWidth:180, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{t}</span>
+                      <button
+                        className="x"
+                        title="삭제"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // delete only this item
+                          const next = recentSearches.filter((x) => x !== t);
+                          // we can't setRecentSearches here (in Sidebar), so call handler if provided
+                          onDeleteRecent?.(t);
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -819,7 +828,7 @@ const runMapSearch = async () => {
 const pickSearchResult = (r) => {
   if (!r) return;
   setFlyTarget([r.lat, r.lng]);
-  setFlyZoom(16);
+  setFlyZoom(17);
   setSearchFocus({ lat: r.lat, lng: r.lng, name: r.name || "" });
   setSidebarOpen(false);
 };
@@ -926,10 +935,12 @@ const pickSearchResult = (r) => {
   // auto fetch address (ko + ja) for the clicked location
   try {
     const [ko, ja] = await Promise.all([
-      reverseGeocode(latlng.lat, latlng.lng, "ko"),
-      reverseGeocode(latlng.lat, latlng.lng, "ja"),
-    ]);
-    setPinPrefill((p) => ({ ...p, krAddr: ko || p.krAddr, jpAddr: ja || p.jpAddr }));
+  reverseGeocode(latlng.lat, latlng.lng, "ko"),
+  reverseGeocode(latlng.lat, latlng.lng, "ja"),
+]);
+const kr = ko || "";
+const jp = (ja || ko || "");
+setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }));
   } catch (e) {
     console.warn(e);
   }
@@ -955,7 +966,7 @@ const pickSearchResult = (r) => {
     setPins((prev) => [...prev, p]);
     setSelectedPinId(p.id);
     setFlyTarget([p.latlng.lat, p.latlng.lng]);
-    setFlyZoom(15);
+    setFlyZoom(16);
   };
 
   const deletePin = (pinId) => {
@@ -969,7 +980,7 @@ const pickSearchResult = (r) => {
     if (!p) return;
     setSelectedPinId(pinId);
     setFlyTarget([p.latlng.lat, p.latlng.lng]);
-    setFlyZoom(16);
+    setFlyZoom(17);
     setSidebarOpen(false);
   };
 
@@ -985,7 +996,7 @@ const pickSearchResult = (r) => {
         const latlng = { lat, lng };
         setUserLoc(latlng);
         setFlyTarget([lat, lng]);
-        setFlyZoom(16);
+        setFlyZoom(17);
       },
       () => alert("위치 권한을 허용해 주세요."),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
@@ -1028,6 +1039,7 @@ const pickSearchResult = (r) => {
         searchResults={searchResults}
         recentSearches={recentSearches}
         onPickSearchResult={pickSearchResult}
+        onDeleteRecent={deleteRecentSearch}
       />
 
       <div className="mapWrap">
@@ -1037,7 +1049,7 @@ const pickSearchResult = (r) => {
           center={DEFAULT_CENTER}
           zoom={DEFAULT_ZOOM}
           minZoom={5}
-          maxZoom={18}
+          maxZoom={19}
           maxBounds={KJ_BOUNDS}
           maxBoundsViscosity={1.0}
           worldCopyJump={false}
