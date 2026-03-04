@@ -21,6 +21,26 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
+/** --------- Marker icons (selected vs normal) ---------- */
+const ICON_SHADOW = "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png";
+const iconBlue = new L.Icon({
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png",
+  shadowUrl: ICON_SHADOW,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+const iconRed = new L.Icon({
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+  shadowUrl: ICON_SHADOW,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+
+
 const KJ_BOUNDS = L.latLngBounds(L.latLng(30.0, 122.0), L.latLng(46.5, 146.5));
 const DEFAULT_CENTER = [36.2, 134.5];
 const DEFAULT_ZOOM = 5;
@@ -464,8 +484,6 @@ function PinModal({
           </div>
         ) : null}
       </div>
-
-      <div className="badge">좌표: {latlngText}</div>
     </Modal>
   );
 }
@@ -490,6 +508,13 @@ function Sidebar({
   onOpenAddCategory,
   query,
   setQuery,
+  mapQuery,
+  setMapQuery,
+  onRunMapSearch,
+  searching,
+  searchResults,
+  recentSearches,
+  onPickSearchResult,
 }) {
   const countCity = (cityId) => pins.filter((p) => p.cityId === cityId).length;
   const countTheme = (themeId) => pins.filter((p) => p.themeId === themeId).length;
@@ -512,20 +537,77 @@ function Sidebar({
         <div className="searchRow">
           <input
             className="searchInput"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="저장한 핀 검색 (상호/주소)"
+            value={mapQuery}
+            onChange={(e) => setMapQuery(e.target.value)}
+            placeholder="장소/주소 검색"
             onKeyDown={(e) => {
-              if (e.key === "Enter") e.currentTarget.blur();
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onRunMapSearch?.();
+              }
             }}
           />
-          <button className="searchBtn" onClick={() => {}}>
-            검색
+          <button className="searchBtn" onClick={() => onRunMapSearch?.()} disabled={searching}>
+            {searching ? "..." : "검색"}
+          </button>
+          <button className="iconBtn" title="닫기" onClick={() => onClose?.()} style={{marginLeft:4}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
           </button>
         </div>
+
+        {(searchResults?.length || recentSearches?.length) ? (
+          <div style={{marginTop:10}}>
+            {searchResults?.length ? (
+              <div>
+                <div className="sectionTitle" style={{margin: "6px 0"}}>검색 결과</div>
+                <div className="list" style={{gap:6}}>
+                  {searchResults.map((r) => (
+                    <div key={r.id} className="item" onClick={() => onPickSearchResult?.(r)}>
+                      <div style={{minWidth:0}}>
+                        <div className="name">{r.name}</div>
+                        <div className="sub">{r.displayName}</div>
+                      </div>
+                      <div className="right">
+                        <button className="smallBtn" onClick={(e) => { e.stopPropagation(); onPickSearchResult?.(r); }}>
+                          이동
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {recentSearches?.length ? (
+              <div style={{marginTop:10}}>
+                <div className="sectionTitle" style={{margin: "6px 0"}}>최근 검색</div>
+                <div style={{display:"flex", flexWrap:"wrap", gap:8}}>
+                  {recentSearches.map((t) => (
+                    <button
+                      key={t}
+                      className="smallBtn"
+                      onClick={() => { setMapQuery(t); setTimeout(() => onRunMapSearch?.(), 0); }}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
+
       <div className="content">
+        <div className="sectionTitle">저장 핀 필터</div>
+        <div className="searchRow" style={{marginBottom:10}}>
+          <input className="searchInput" value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="상호/주소 필터" />
+          <button className="smallBtn" onClick={()=>setQuery("")}>초기화</button>
+        </div>
+
         <div className="sectionTitle">폴더 (도시 &gt; 테마)</div>
 
         <div className="list">
@@ -552,7 +634,7 @@ function Sidebar({
                   </button>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button className="iconBtn" title="이름 변경" onClick={() => onRenameCity(c.id)}>
-                      {icon("M12 20h9")}
+                      {icon(["M12 20h9","M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"])}
                     </button>
                     <button className="iconBtn" title="삭제" onClick={() => onDeleteCity(c.id)}>
                       {icon("M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14")}
@@ -584,7 +666,7 @@ function Sidebar({
                             title="이름 변경"
                             onClick={() => onRenameTheme(c.id, t.id)}
                           >
-                            {icon("M12 20h9")}
+                            {icon(["M12 20h9","M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"])}
                           </button>
                           <button
                             className="iconBtn"
@@ -677,9 +759,65 @@ function App() {
   const [query, setQuery] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+// Map search (Nominatim) + recent searches (max 5)
+const [mapQuery, setMapQuery] = useState("");
+const [searching, setSearching] = useState(false);
+const [searchResults, setSearchResults] = useState([]); // {id,name,displayName,lat,lng}
+const [recentSearches, setRecentSearches] = useState([]); // strings
+
+const runMapSearch = async () => {
+  const q = mapQuery.trim();
+  if (!q) return;
+  setSearching(true);
+  try {
+    const url =
+      "https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1&q=" +
+      encodeURIComponent(q);
+    const res = await fetch(url, {
+      headers: { "Accept-Language": "ko" },
+    });
+    const data = await res.json();
+    const results = (Array.isArray(data) ? data : []).map((r) => {
+      const displayName = String(r.display_name || "");
+      const first = displayName.split(",")[0]?.trim() || displayName || q;
+      return {
+        id: uid(),
+        name: first,
+        displayName,
+        lat: Number(r.lat),
+        lng: Number(r.lon),
+      };
+    });
+    setSearchResults(results);
+    setRecentSearches((prev) => {
+      const next = [q, ...prev.filter((x) => x !== q)];
+      return next.slice(0, 5);
+    });
+  } catch (e) {
+    console.warn(e);
+    setSearchResults([]);
+    alert("검색에 실패했습니다. 잠시 후 다시 시도해 주세요.");
+  } finally {
+    setSearching(false);
+  }
+};
+
+const pickSearchResult = (r) => {
+  if (!r) return;
+  setFlyTarget([r.lat, r.lng]);
+  setFlyZoom(16);
+  // Open pin modal at searched location (NO auto-save)
+  setDraftLatLng({ lat: r.lat, lng: r.lng });
+  setPinPrefill({ name: r.name || "", jpAddr: r.displayName || "", krAddr: "" });
+  setPinModalOpen(true);
+  setSidebarOpen(false);
+};
+
+
   const [addCatOpen, setAddCatOpen] = useState(false);
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [draftLatLng, setDraftLatLng] = useState(null);
+  const [pinPrefill, setPinPrefill] = useState({ name: "", jpAddr: "", krAddr: "" });
 
   const [flyTarget, setFlyTarget] = useState(null);
   const [flyZoom, setFlyZoom] = useState(null);
@@ -770,6 +908,7 @@ function App() {
 
   const openPinModalAt = (latlng) => {
     setDraftLatLng(latlng);
+    setPinPrefill({ name: "", jpAddr: "", krAddr: "" });
     setPinModalOpen(true);
   };
 
@@ -858,9 +997,18 @@ function App() {
         onOpenAddCategory={() => setAddCatOpen(true)}
         query={query}
         setQuery={setQuery}
+        mapQuery={mapQuery}
+        setMapQuery={setMapQuery}
+        onRunMapSearch={runMapSearch}
+        searching={searching}
+        searchResults={searchResults}
+        recentSearches={recentSearches}
+        onPickSearchResult={pickSearchResult}
       />
 
       <div className="mapWrap">
+        {sidebarOpen ? <div className="sidebarBackdrop" onClick={() => setSidebarOpen(false)} /> : null}
+
         <MapContainer
           center={DEFAULT_CENTER}
           zoom={DEFAULT_ZOOM}
@@ -904,7 +1052,7 @@ function App() {
                   <CircleMarker
                     center={[p.latlng.lat, p.latlng.lng]}
                     radius={14}
-                    pathOptions={{ weight: 3, opacity: 1, fillOpacity: 0 }}
+                    pathOptions={{ weight: 3, opacity: 1, fillOpacity: 0, color: '#ef4444' }}
                   />
                 ) : null}
               </React.Fragment>
@@ -915,7 +1063,7 @@ function App() {
             <CircleMarker
               center={[userLoc.lat, userLoc.lng]}
               radius={7}
-              pathOptions={{ weight: 2, opacity: 1, fillOpacity: 0.45 }}
+              pathOptions={{ weight: 2, opacity: 1, fillOpacity: 0.45, color: '#111' }}
             />
           ) : null}
         </MapContainer>

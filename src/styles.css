@@ -34,6 +34,7 @@ html,body{height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Ro
   border-radius:12px;
   padding:0 12px;
   outline:none;
+  font-size:16px;
 }
 .searchBtn{
   height:40px;
@@ -224,4 +225,30 @@ html,body{height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Ro
   border:1px solid var(--line);
   background:#fafafa;
   object-fit:cover;
+}
+
+
+/* v2.2.0 - simpler category rows + mobile backdrop */
+.pill{
+  border:none;
+  background:transparent;
+  padding:6px 0;
+  border-radius:0;
+}
+.pill:hover{background:transparent;}
+.iconBtn{
+  border:none;
+  background:transparent;
+  width:32px; height:32px;
+}
+.iconBtn:hover{background:#f3f4f6; border-radius:10px;}
+.sidebarBackdrop{ display:none; }
+@media (max-width: 900px){
+  .sidebarBackdrop{
+    display:block;
+    position:absolute;
+    inset:0;
+    background: rgba(0,0,0,.22);
+    z-index:1150;
+  }
 }
