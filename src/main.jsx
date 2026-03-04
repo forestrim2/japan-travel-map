@@ -1367,27 +1367,33 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
         ) : null}
 
         {pinModalOpen ? (
-          {viewPinId && (
-        <PinViewModal
-          pin={pins.find((p) => p.id === viewPinId)}
-          onClose={() => setViewPinId(null)}
-          onEdit={() => { setEditPinId(viewPinId); setViewPinId(null); setIsPinModalOpen(true); }}
-        />
-      )}
+  <>
+    {viewPinId && (
+      <PinViewModal
+        pin={pins.find((p) => p.id === viewPinId)}
+        onClose={() => setViewPinId(null)}
+        onEdit={() => {
+          setEditPinId(viewPinId);
+          setViewPinId(null);
+          setPinModalOpen(true);
+        }}
+      />
+    )}
 
-      <PinModal
-            cities={cities}
-            themesByCity={themesByCity}
-            initialCityId={selectedCityId || cities[0]?.id || ""}
-            initialThemeId={
-              selectedThemeId ||
-              (themesByCity[selectedCityId || cities[0]?.id || ""]?.[0]?.id || "")
-            }
-            initialLatLng={draftLatLng}
-            onSave={savePin}
-            onClose={() => setPinModalOpen(false)}
-          />
-        ) : null}
+    <PinModal
+      cities={cities}
+      themesByCity={themesByCity}
+      initialCityId={selectedCityId || cities[0]?.id || ""}
+      initialThemeId={
+        selectedThemeId ||
+        (themesByCity[selectedCityId || cities[0]?.id || ""]?.[0]?.id || "")
+      }
+      initialLatLng={draftLatLng}
+      onSave={savePin}
+      onClose={() => setPinModalOpen(false)}
+    />
+  </>
+) : null}
       </div>
     </div>
   );
