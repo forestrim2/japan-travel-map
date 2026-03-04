@@ -262,10 +262,6 @@ html,body{height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Ro
 }
 .modalBody{ overflow:auto; }
 .modalFooter{ flex:0 0 auto; }
-.fab.active{
-  border-color:#111;
-  transform: translateZ(0);
-}
 .addModeHint{
   position:absolute;
   right:68px;
@@ -281,11 +277,6 @@ html,body{height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Ro
 
 
 /* v2.2.2 - stronger add-mode indicator + recent chip delete */
-.fab.active{
-  border-color:#111;
-  background:#111;
-  color:#fff;
-}
 .fab.active svg path{ stroke:#fff; }
 .recentChip{
   display:flex;
@@ -308,3 +299,11 @@ html,body{height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Ro
   line-height:1;
 }
 .recentChip .x:hover{ background:#f3f4f6; }
+
+
+/* v2.3.0 - add mode red plus */
+.fab.active{
+  border-color:#d11;
+  color:#d11;
+  background:#fff;
+}

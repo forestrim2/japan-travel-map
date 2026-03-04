@@ -289,6 +289,13 @@ function PinModal({
   const [name, setName] = useState("");
   const [jpAddr, setJpAddr] = useState("");
   const [krAddr, setKrAddr] = useState("");
+useEffect(() => {
+  // when reverse-geocode arrives, reflect it into inputs (but don't overwrite user's typing if already filled)
+  if (pinPrefill?.name && !name) setName(pinPrefill.name);
+  if (pinPrefill?.jpAddr && !jpAddr) setJpAddr(pinPrefill.jpAddr);
+  if (pinPrefill?.krAddr && !krAddr) setKrAddr(pinPrefill.krAddr);
+}, [pinPrefill]);
+
   const [memo, setMemo] = useState("");
   const [links, setLinks] = useState([""]);
   const [photos, setPhotos] = useState([]);
@@ -419,7 +426,23 @@ function PinModal({
       </div>
 
       <div className="field">
-        <label>메모</label>
+        <label>일본 주소</label>
+<input value={jpAddr} onChange={(e) => setJpAddr(e.target.value)} placeholder="자동/직접 입력" />
+<label>한국 주소</label>
+<input value={krAddr} onChange={(e) => setKrAddr(e.target.value)} placeholder="자동/직접 입력" />
+<label>구글 로드뷰 (주소 기반)</label>
+<div style={{display:"flex", gap:8, alignItems:"center"}}>
+  <input
+    value={makeGoogleMapsQueryUrl((krAddr || jpAddr || "").trim())}
+    readOnly
+    onFocus={(e)=>e.target.select()}
+    style={{flex:1}}
+  />
+  <button className="btn" type="button" onClick={() => openGoogleByAddress((krAddr || jpAddr || "").trim())}>열기</button>
+</div>
+
+<label>메모</label>
+
         <textarea value={memo} onChange={(e) => setMemo(e.target.value)} />
       </div>
 
@@ -530,6 +553,7 @@ function Sidebar({
   recentSearches,
   onPickSearchResult,
   onDeleteRecent,
+  onClearSearch,
 }) {
   const countCity = (cityId) => pins.filter((p) => p.cityId === cityId).length;
   const countTheme = (themeId) => pins.filter((p) => p.themeId === themeId).length;
@@ -703,7 +727,7 @@ function Sidebar({
                     ))}
 
                     <div className="sectionTitle" style={{ marginTop: 8 }}>
-                      소분류 목록
+                      
                     </div>
 
                     {pins
@@ -763,6 +787,8 @@ function Sidebar({
 }
 
 function App() {
+  const confirmDanger = (msg) => window.confirm(msg || '정말 삭제하십니까?');
+
   const loaded = loadState();
 
   const [cities, setCities] = useState(
@@ -792,6 +818,11 @@ const deleteRecentSearch = (term) => {
   const t = String(term || "").trim();
   if (!t) return;
   setRecentSearches((prev) => prev.filter((x) => x !== t));
+};
+
+const clearMapSearchResults = () => {
+  setSearchResults([]);
+  setSearchError("");
 };
 
 const runMapSearch = async () => {
@@ -883,6 +914,47 @@ const pickSearchResult = (r) => {
     });
     setExpandedCityIds((p) => [...new Set([...p, cityId])]);
   };
+const moveTheme = (themeId) => {
+  const theme = themes.find((t) => t.id === themeId);
+  if (!theme) return;
+  const opts = cities.map((c, i) => `${i + 1}) ${c.name}`).join("\n");
+  const pick = prompt(`이동할 도시를 선택해 주세요.\n${opts}`);
+  if (!pick) return;
+  const idx = Number(pick) - 1;
+  const city = cities[idx];
+  if (!city) return;
+  setThemes((prev) => prev.map((t) => (t.id === themeId ? { ...t, cityId: city.id } : t)));
+  // pins under this theme stay in theme; visible when city changes selection rules
+};
+
+const movePin = (pinId) => {
+  const pin = pins.find((p) => p.id === pinId);
+  if (!pin) return;
+
+  const cityOpts = cities.map((c, i) => `${i + 1}) ${c.name}`).join("\n");
+  const cityPick = prompt(`이동할 도시를 선택해 주세요.\n${cityOpts}`);
+  if (!cityPick) return;
+  const cityIdx = Number(cityPick) - 1;
+  const city = cities[cityIdx];
+  if (!city) return;
+
+  const themesInCity = themes.filter((t) => t.cityId === city.id);
+  if (!themesInCity.length) {
+    alert("선택한 도시의 테마가 없습니다. 먼저 테마를 추가해 주세요.");
+    return;
+  }
+  const themeOpts = themesInCity.map((t, i) => `${i + 1}) ${t.name}`).join("\n");
+  const themePick = prompt(`이동할 테마를 선택해 주세요.\n${themeOpts}`);
+  if (!themePick) return;
+  const themeIdx = Number(themePick) - 1;
+  const theme = themesInCity[themeIdx];
+  if (!theme) return;
+
+  setPins((prev) =>
+    prev.map((p) => (p.id === pinId ? { ...p, cityId: city.id, themeId: theme.id } : p))
+  );
+};
+
 
   const renameCity = (cityId) => {
     const c = cities.find((x) => x.id === cityId);
@@ -1046,6 +1118,7 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
         recentSearches={recentSearches}
         onPickSearchResult={pickSearchResult}
         onDeleteRecent={deleteRecentSearch}
+        onClearSearch={clearMapSearchResults}
       />
 
       <div className="mapWrap">
@@ -1055,7 +1128,7 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
           center={DEFAULT_CENTER}
           zoom={DEFAULT_ZOOM}
           minZoom={5}
-          maxZoom={19}
+          maxZoom={18} maxNativeZoom={18}
           maxBounds={KJ_BOUNDS}
           maxBoundsViscosity={1.0}
           worldCopyJump={false}
