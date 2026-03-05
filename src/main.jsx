@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "leaflet/dist/leaflet.css";
 import "./styles.css";
 import L from "leaflet";
+import { createClient } from "@supabase/supabase-js";
 import {
   MapContainer,
   TileLayer,
@@ -41,10 +42,29 @@ const iconRed = new L.Icon({
 });
 
 
-const KJ_BOUNDS = L.latLngBounds(L.latLng(30.0, 122.0), L.latLng(46.5, 148.5));
+const KJ_BOUNDS = L.latLngBounds(L.latLng(30.0, 122.0), L.latLng(46.5, 146.5));
 const DEFAULT_CENTER = [36.2, 134.5];
 const DEFAULT_ZOOM = 6;
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+const supabase = SUPABASE_URL && SUPABASE_ANON_KEY ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+// 테이블: travel_maps (id text primary key, data jsonb, updated_at timestamptz default now())
+
+
+
+const SYNC_HASH_PREFIX = "sync=";
+function getOrCreateSyncId() {
+  const h = String(window.location.hash || "").replace(/^#/, "");
+  if (h.startsWith(SYNC_HASH_PREFIX) && h.slice(SYNC_HASH_PREFIX.length)) {
+    return h.slice(SYNC_HASH_PREFIX.length);
+  }
+  const id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  // 로그인/코드 입력 없이 "같은 링크"로 동기화되도록 해시를 자동 생성합니다.
+  window.location.hash = SYNC_HASH_PREFIX + id;
+  return id;
+}
 const LS_KEY = "travel_pin_map_v2";
 function loadState() {
   try {
@@ -60,92 +80,6 @@ function saveState(s) {
     localStorage.setItem(LS_KEY, JSON.stringify(s));
   } catch {}
 }
-
-/** --------- Optional cloud sync (no login) ----------
- * If Supabase env vars are set, the app syncs by URL hash key:
- *   https://your-site/#sync=abcdef1234
- * Open the SAME link on mobile/PC to sync automatically.
- */
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-function syncEnabled() {
-  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
-}
-
-function parseHashParams() {
-  const h = (window.location.hash || "").replace(/^#/, "");
-  const out = {};
-  for (const part of h.split("&")) {
-    if (!part) continue;
-    const [k, v] = part.split("=");
-    out[decodeURIComponent(k)] = decodeURIComponent(v || "");
-  }
-  return out;
-}
-
-function setHashParam(key, value) {
-  const p = parseHashParams();
-  p[key] = value;
-  const next = Object.entries(p)
-    .filter(([, v]) => String(v || "").length)
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-    .join("&");
-  window.location.hash = next ? `#${next}` : "";
-}
-
-function makeSyncKey() {
-  const chars = "abcdefghijkmnpqrstuvwxyz23456789";
-  let s = "";
-  for (let i = 0; i < 10; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return s;
-}
-
-function getOrCreateSyncKey() {
-  const p = parseHashParams();
-  let k = String(p.sync || "").trim();
-  if (!k) {
-    k = makeSyncKey();
-    setHashParam("sync", k);
-  }
-  return k;
-}
-
-async function pullRemoteState(syncKey) {
-  if (!syncEnabled()) return null;
-  const key = String(syncKey || "").trim();
-  if (!key) return null;
-  const url =
-    `${SUPABASE_URL}/rest/v1/map_state?key=eq.${encodeURIComponent(key)}&select=payload,updated_at`;
-  const res = await fetch(url, {
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    },
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data?.[0] || null;
-}
-
-async function pushRemoteState(syncKey, payload) {
-  if (!syncEnabled()) return false;
-  const key = String(syncKey || "").trim();
-  if (!key) return false;
-  const body = { key, payload, updated_at: new Date().toISOString() };
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/map_state`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      Prefer: "resolution=merge-duplicates",
-    },
-    body: JSON.stringify(body),
-  });
-  return res.ok;
-}
-
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
@@ -290,6 +224,237 @@ function Modal({ title, onClose, children, footer }) {
   );
 }
 
+
+function PinDetailModal({
+  pin,
+  cities,
+  themesByCity,
+  onClose,
+  onUpdate,
+  onDelete,
+}) {
+  const [editing, setEditing] = useState(false);
+
+  const [cityId, setCityId] = useState(pin.cityId || cities[0]?.id || "");
+  const themes = themesByCity[cityId] || [];
+  const [themeId, setThemeId] = useState(pin.themeId || themes[0]?.id || "");
+  useEffect(() => {
+    const nextThemes = themesByCity[cityId] || [];
+    if (!nextThemes.length) setThemeId("");
+    else if (nextThemes.some((t) => t.id === themeId)) return;
+    else setThemeId(nextThemes[0]?.id || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cityId]);
+
+  const [name, setName] = useState(pin.name || "");
+  const [jpAddr, setJpAddr] = useState(pin.jpAddr || "");
+  const [krAddr, setKrAddr] = useState(pin.krAddr || "");
+  const [memo, setMemo] = useState(pin.memo || "");
+  const [links, setLinks] = useState(Array.isArray(pin.links) && pin.links.length ? pin.links : [""]);
+  const [photos, setPhotos] = useState(Array.isArray(pin.photos) ? pin.photos : []);
+  const [photoIndex, setPhotoIndex] = useState(0);
+
+  const addPhotoFiles = async (files) => {
+    const list = Array.from(files || []);
+    const toDataUrl = (file) =>
+      new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result));
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+    const next = [];
+    for (const f of list) {
+      try {
+        const url = await toDataUrl(f);
+        next.push({ id: uid(), name: f.name, dataUrl: url });
+      } catch {}
+    }
+    setPhotos((prev) => [...prev, ...next]);
+    setPhotoIndex(0);
+  };
+
+  const streetQuery = (krAddr || jpAddr).trim();
+  const streetUrl = streetQuery
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(streetQuery)}`
+    : "";
+
+  return (
+    <Modal
+      title="핀 상세"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="ghost" onClick={onClose}>
+            닫기
+          </button>
+          <button
+            className="ghost"
+            onClick={() => {
+              if (!window.confirm("정말 삭제하십니까?")) return;
+              onDelete(pin.id);
+              onClose();
+            }}
+          >
+            삭제
+          </button>
+          <button
+            className="primary"
+            onClick={() => {
+              if (!editing) return setEditing(true);
+              onUpdate(pin.id, {
+                cityId,
+                themeId,
+                name: name.trim(),
+                jpAddr: jpAddr.trim(),
+                krAddr: krAddr.trim(),
+                memo,
+                links: links.map((x) => String(x || "").trim()).filter(Boolean),
+                photos,
+              });
+              setEditing(false);
+            }}
+          >
+            {editing ? "저장" : "수정"}
+          </button>
+        </>
+      }
+    >
+      <div className="field">
+        <label>도시</label>
+        <select value={cityId} onChange={(e) => setCityId(e.target.value)} disabled={!editing}>
+          {cities.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="field">
+        <label>테마</label>
+        <select value={themeId} onChange={(e) => setThemeId(e.target.value)} disabled={!editing}>
+          {(themesByCity[cityId] || []).map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="field">
+        <label>거래처명</label>
+        <input value={name} onChange={(e) => setName(e.target.value)} disabled={!editing} />
+      </div>
+
+      <div className="field">
+        <label>일본 주소</label>
+        <input value={jpAddr} onChange={(e) => setJpAddr(e.target.value)} disabled={!editing} />
+      </div>
+
+      <div className="field">
+        <label>한국 주소</label>
+        <input value={krAddr} onChange={(e) => setKrAddr(e.target.value)} disabled={!editing} />
+      </div>
+
+      <div className="field">
+        <label>구글 로드뷰(주소 기반)</label>
+        <div className="linkRow">
+          <input value={streetQuery} readOnly />
+          <button className="smallBtn" onClick={() => openGoogleByAddress(streetQuery)} disabled={!streetQuery}>
+            열기
+          </button>
+        </div>
+        {streetUrl ? <div className="badge" style={{ marginTop: 6 }}>{streetUrl}</div> : null}
+      </div>
+
+      <div className="field">
+        <label>메모</label>
+        <textarea value={memo} onChange={(e) => setMemo(e.target.value)} disabled={!editing} />
+      </div>
+
+      <div className="field">
+        <label>링크</label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {links.map((v, i) => (
+            <div key={i} className="linkRow">
+              <input value={v} onChange={(e) => {
+                const next = [...links];
+                next[i] = e.target.value;
+                setLinks(next);
+              }} disabled={!editing} placeholder="https://..." />
+              {editing ? (
+                <button className="smallBtn danger" onClick={() => {
+                  const next = links.filter((_, idx) => idx !== i);
+                  setLinks(next.length ? next : [""]);
+                }}>삭제</button>
+              ) : null}
+            </div>
+          ))}
+          {editing ? (
+            <button className="smallBtn" onClick={() => setLinks((p) => [...p, ""])}>
+              + 링크 추가
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="field">
+        <label>사진</label>
+        {editing ? (
+          <input type="file" accept="image/*" multiple onChange={(e) => addPhotoFiles(e.target.files)} />
+        ) : null}
+        {photos.length ? (
+          <div className="photoWrap">
+            <img src={photos[Math.min(photoIndex, photos.length - 1)].dataUrl} alt="photo" />
+            <div className="photoNav">
+              <button className="smallBtn" onClick={() => setPhotoIndex((p) => (p - 1 + photos.length) % photos.length)}>
+                이전
+              </button>
+              <span className="badge">
+                {Math.min(photoIndex + 1, photos.length)}/{photos.length}
+              </span>
+              <button className="smallBtn" onClick={() => setPhotoIndex((p) => (p + 1) % photos.length)}>
+                다음
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="badge">사진 없음</div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+
+function MoveThemeModal({ cities, themesByCity, fromCityId, themeId, onMove, onClose }) {
+  const [toCityId, setToCityId] = useState(fromCityId);
+  return (
+    <Modal
+      title="테마 이동"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="ghost" onClick={onClose}>취소</button>
+          <button className="primary" onClick={() => { onMove(toCityId); onClose(); }}>이동</button>
+        </>
+      }
+    >
+      <div className="field">
+        <label>대상 도시</label>
+        <select value={toCityId} onChange={(e) => setToCityId(e.target.value)}>
+          {cities.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </div>
+    </Modal>
+  );
+}
+
 function AddCategoryModal({ cities, onAddCity, onAddTheme, onClose }) {
   const [pick, setPick] = useState("city");
   const [name, setName] = useState("");
@@ -358,6 +523,7 @@ function PinModal({
   initialCityId,
   initialThemeId,
   initialLatLng,
+  prefill,
   onSave,
   onClose,
 }) {
@@ -372,17 +538,19 @@ function PinModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityId]);
 
-  const [name, setName] = useState("");
-  const [jpAddr, setJpAddr] = useState("");
-  const [krAddr, setKrAddr] = useState("");
+  const [name, setName] = useState(prefill?.name || "");
+  const [jpAddr, setJpAddr] = useState(prefill?.jpAddr || "");
+  const [krAddr, setKrAddr] = useState(prefill?.krAddr || "");
+
+  useEffect(() => {
+    setName(prefill?.name || "");
+    setJpAddr(prefill?.jpAddr || "");
+    setKrAddr(prefill?.krAddr || "");
+  }, [prefill, initialLatLng]);
   const [memo, setMemo] = useState("");
   const [links, setLinks] = useState([""]);
   const [photos, setPhotos] = useState([]);
   const [photoIndex, setPhotoIndex] = useState(0);
-
-  const latlngText = initialLatLng
-    ? fmtLatLng(initialLatLng.lat, initialLatLng.lng)
-    : "";
 
   const addPhotoFiles = async (files) => {
     const list = Array.from(files || []);
@@ -489,22 +657,27 @@ function PinModal({
       </div>
 
       <div className="field">
-        <label>구글(로드뷰 검색용)</label>
-        <div className="linkRow">
-          <input value={krAddr || jpAddr} readOnly />
-          <button
-            className="smallBtn"
-            onClick={() => openGoogleByAddress(krAddr || jpAddr)}
-          >
-            열기
-          </button>
-        </div>
-        <div className="badge" style={{ marginTop: 6 }}>
-          좌표가 아니라 주소로 검색합니다.
-        </div>
-      </div>
+  <label>구글 로드뷰(주소 기반)</label>
+  <div className="linkRow">
+    <input value={(krAddr || jpAddr).trim()} readOnly />
+    <button
+      className="smallBtn"
+      onClick={() => openGoogleByAddress((krAddr || jpAddr).trim())}
+      disabled={!((krAddr || jpAddr).trim())}
+    >
+      열기
+    </button>
+  </div>
+  <div className="badge" style={{ marginTop: 6 }}>
+    {(() => {
+      const q = (krAddr || jpAddr).trim();
+      return q ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}` : "";
+    })()}
+  </div>
+</div>
 
-      <div className="field">
+<div className="field">
+  <label>메모</label>      <div className="field">
         <label>메모</label>
         <textarea value={memo} onChange={(e) => setMemo(e.target.value)} />
       </div>
@@ -590,6 +763,7 @@ function PinModal({
 
 function Sidebar({
   open,
+  onClose,
   cities,
   themesByCity,
   pins,
@@ -605,6 +779,7 @@ function Sidebar({
   onDeleteCity,
   onRenameTheme,
   onDeleteTheme,
+  onMoveTheme,
   onOpenAddCategory,
   query,
   setQuery,
@@ -616,7 +791,9 @@ function Sidebar({
   recentSearches,
   onPickSearchResult,
   onDeleteRecent,
-  onClearSearch,
+  onClearMapSearch,
+  onFocusMapSearch,
+  showSearchPanel,
 }) {
   const countCity = (cityId) => pins.filter((p) => p.cityId === cityId).length;
   const countTheme = (themeId) => pins.filter((p) => p.themeId === themeId).length;
@@ -642,6 +819,7 @@ function Sidebar({
             value={mapQuery}
             onChange={(e) => setMapQuery(e.target.value)}
             placeholder="장소/주소 검색"
+            onFocus={() => onFocusMapSearch?.()}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -649,20 +827,22 @@ function Sidebar({
               }
             }}
           />
-          {mapQuery ? (
-          <button className="clearBtn" onClick={() => onClearSearch?.()} title="지우기">×</button>
-        ) : null}
           <button className="searchBtn" onClick={() => onRunMapSearch?.()} disabled={searching}>
             {searching ? "..." : "검색"}
           </button>
-          <button className="iconBtn" title="닫기" onClick={() => onClose?.()} style={{marginLeft:4}}>
+          <button className="iconBtn" title="지우기" onClick={() => onClearMapSearch?.()} style={{marginLeft:4}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+          </button>
+          <button className="iconBtn" title="목록 닫기" onClick={() => onClose?.()} style={{marginLeft:4}}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
             </svg>
           </button>
         </div>
 
-        {(searchResults?.length || recentSearches?.length) ? (
+        {(showSearchPanel && searchResults?.length || recentSearches?.length) ? (
           <div style={{marginTop:10}}>
             {searchResults?.length ? (
               <div>
@@ -776,6 +956,13 @@ function Sidebar({
                         <div style={{ display: "flex", gap: 8 }}>
                           <button
                             className="iconBtn"
+                            title="이동"
+                            onClick={() => onMoveTheme?.(c.id, t.id)}
+                          >
+                            {icon("M5 9l-3 3 3 3M2 12h10M19 15l3-3-3-3M22 12H12")}
+                          </button>
+                          <button
+                            className="iconBtn"
                             title="이름 변경"
                             onClick={() => onRenameTheme(c.id, t.id)}
                           >
@@ -792,13 +979,9 @@ function Sidebar({
                       </div>
                     ))}
 
-                    <div className="sectionTitle" style={{ marginTop: 8 }}>
-                      소분류 목록
-                    </div>
-
                     {pins
                       .filter((p) => p.cityId === c.id)
-                      .filter((p) => (selectedThemeId ? p.themeId === selectedThemeId : true))
+                      .filter((p) => (selectedThemeId ? p.themeId === selectedThemeId : false))
                       .filter((p) => {
                         const q = query.trim().toLowerCase();
                         if (!q) return true;
@@ -819,18 +1002,19 @@ function Sidebar({
                           <div style={{ minWidth: 0 }}>
                             <div className="name">{p.name || "(이름 없음)"}</div>
                             <div className="sub">
-                              {p.krAddr || p.jpAddr || fmtLatLng(p.latlng.lat, p.latlng.lng)}
+                              {p.krAddr || p.jpAddr || ""}
                             </div>
                           </div>
                           <div className="right">
                             <button
-                              className="smallBtn danger"
+                              className="iconBtn"
+                              title="삭제"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 onSelectPin(p.id, true);
                               }}
                             >
-                              삭제
+                              {icon("M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14")}
                             </button>
                           </div>
                         </div>
@@ -853,8 +1037,8 @@ function Sidebar({
 }
 
 function App() {
+  const syncId = useMemo(() => getOrCreateSyncId(), []);
   const loaded = loadState();
-  const syncKey = useMemo(() => getOrCreateSyncKey(), []);
 
   const [cities, setCities] = useState(
     loaded?.cities || [
@@ -869,12 +1053,16 @@ function App() {
   const [selectedCityId, setSelectedCityId] = useState(loaded?.selectedCityId || "");
   const [selectedThemeId, setSelectedThemeId] = useState(loaded?.selectedThemeId || "");
   const [selectedPinId, setSelectedPinId] = useState("");
+  const [pinDetailOpen, setPinDetailOpen] = useState(false);
+  const [pinDetailId, setPinDetailId] = useState("");
 
   const [query, setQuery] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
 // Map search (Nominatim) + recent searches (max 5)
 const [mapQuery, setMapQuery] = useState("");
+
+  const [showSearchPanel, setShowSearchPanel] = useState(false);
 const [searching, setSearching] = useState(false);
 const [searchResults, setSearchResults] = useState([]); // {id,name,displayName,lat,lng}
 const [recentSearches, setRecentSearches] = useState([]); // strings
@@ -890,12 +1078,11 @@ const runMapSearch = async () => {
   if (!q) return;
   setSearching(true);
   try {
-    const viewbox = "122.0,46.5,148.5,30.0"; // left,top,right,bottom (KR+JP)
-const url =
-    "https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1" +
-    "&countrycodes=kr,jp&bounded=1&viewbox=" + encodeURIComponent(viewbox) +
-    "&accept-language=ko&q=" +
-    encodeURIComponent(q);
+    const url =
+      "https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1&countrycodes=kr,jp&bounded=1&viewbox=" +
+      encodeURIComponent("122,46.5,146.5,30") +
+      "&q=" +
+      encodeURIComponent(q);
     const res = await fetch(url, {
       headers: { "Accept-Language": "ko" },
     });
@@ -910,13 +1097,6 @@ const url =
         lat: Number(r.lat),
         lng: Number(r.lon),
       };
-
-const clearMapSearch = () => {
-  setMapQuery("");
-  setSearchResults([]);
-  setSearchFocus(null);
-};
-
     });
     setSearchResults(results);
     setRecentSearches((prev) => {
@@ -937,12 +1117,29 @@ const pickSearchResult = (r) => {
   setFlyTarget([r.lat, r.lng]);
   setFlyZoom(17);
   setSearchFocus({ lat: r.lat, lng: r.lng, name: r.name || "" });
-  setSidebarOpen(false);
+  setPinDetailId(pinId);
+    setPinDetailOpen(true);
+    setSidebarOpen(false);
 };
 
 
 
+
+const clearMapSearchUI = () => {
+  setMapQuery("");
+  setSearchResults([]);
+  setSearchFocus(null);
+  setShowSearchPanel(false);
+};
+
+const focusMapSearchUI = () => {
+  setShowSearchPanel(true);
+};
   const [addCatOpen, setAddCatOpen] = useState(false);
+  const [moveThemeOpen, setMoveThemeOpen] = useState(false);
+  const [moveThemeFromCityId, setMoveThemeFromCityId] = useState("");
+  const [moveThemeId, setMoveThemeId] = useState("");
+
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [draftLatLng, setDraftLatLng] = useState(null);
   const [pinPrefill, setPinPrefill] = useState({ name: "", jpAddr: "", krAddr: "" });
@@ -954,52 +1151,67 @@ const pickSearchResult = (r) => {
   const [addingPinMode, setAddingPinMode] = useState(false);
   const [searchFocus, setSearchFocus] = useState(null); // {lat,lng,name}
 
-
-// Pull remote state once on mount (if enabled)
+  
+// ---- Remote sync (optional, login 없이 URL 해시로 식별) ----
+  const lastRemoteTs = useRef(0);
 useEffect(() => {
-  let cancelled = false;
+  let alive = true;
+  if (!supabase) return;
   (async () => {
-    if (!syncEnabled()) return;
-    const remote = await pullRemoteState(syncKey);
-    if (cancelled || !remote?.payload) return;
     try {
-      const p = remote.payload;
-      // Merge: prefer remote if it has any pins/cities/themes (or local empty)
-      if (p?.cities && p?.themesByCity && p?.pins) {
-        setCities(p.cities);
-        setThemesByCity(p.themesByCity);
-        setPins(p.pins);
-        if (Array.isArray(p.expandedCityIds)) setExpandedCityIds(p.expandedCityIds);
-        if (p.selectedCityId) setSelectedCityId(p.selectedCityId);
-        if (p.selectedThemeId) setSelectedThemeId(p.selectedThemeId);
-        if (p.selectedPinId) setSelectedPinId(p.selectedPinId);
-        if (Array.isArray(p.recentSearches)) setRecentSearches(p.recentSearches);
+      const { data, error } = await supabase.from("travel_maps").select("data").eq("id", syncId).maybeSingle();
+      if (error) throw error;
+      if (data?.data && alive) {
+        const r = data.data;
+        if (r.cities && r.themesByCity && r.pins) {
+            if (r.updatedAt) lastRemoteTs.current = Number(r.updatedAt) || 0;
+          setCities(r.cities);
+          setThemesByCity(r.themesByCity);
+          setPins(r.pins);
+          if (r.expandedCityIds) setExpandedCityIds(r.expandedCityIds);
+          if (r.selectedCityId !== undefined) setSelectedCityId(r.selectedCityId);
+          if (r.selectedThemeId !== undefined) setSelectedThemeId(r.selectedThemeId);
+        }
       }
-    } catch {}
+    } catch (e) {
+      console.warn("remote load failed", e);
+    }
   })();
-  return () => { cancelled = true; };
-}, []);
 
-// Push to remote (debounced) whenever local state changes
-useEffect(() => {
-  if (!syncEnabled()) return;
-  const payload = {
-    cities,
-    themesByCity,
-    pins,
-    expandedCityIds,
-    selectedCityId,
-    selectedThemeId,
-    selectedPinId,
-    recentSearches,
+  const interval = setInterval(async () => {
+    try {
+      const { data } = await supabase.from("travel_maps").select("data").eq("id", syncId).maybeSingle();
+      const r = data?.data;
+      if (!r) return;
+      // pull-only if newer not tracked; 간단하게 마지막 상태를 덮어씁니다.
+      // (여러 기기에서 동시에 쓰는 경우를 위한 최소 동기화)
+    } catch {}
+  }, 8000);
+
+  return () => {
+    alive = false;
+    clearInterval(interval);
   };
-  const t = setTimeout(() => {
-    pushRemoteState(syncKey, payload);
-  }, 1200);
-  return () => clearTimeout(t);
-}, [cities, themesByCity, pins, expandedCityIds, selectedCityId, selectedThemeId, selectedPinId, recentSearches]);
+}, [syncId]);
 
-  useEffect(() => {
+const pushRemote = useRef(null);
+useEffect(() => {
+  if (!supabase) return;
+  if (pushRemote.current) clearTimeout(pushRemote.current);
+  pushRemote.current = setTimeout(async () => {
+    try {
+      const payload = { cities, themesByCity, pins, expandedCityIds, selectedCityId, selectedThemeId, updatedAt: Date.now() };
+      await supabase.from("travel_maps").upsert({ id: syncId, data: payload }, { onConflict: "id" });
+    } catch (e) {
+      console.warn("remote save failed", e);
+    }
+  }, 600);
+  return () => {
+    if (pushRemote.current) clearTimeout(pushRemote.current);
+  };
+}, [cities, themesByCity, pins, expandedCityIds, selectedCityId, selectedThemeId, syncId]);
+
+useEffect(() => {
     saveState({
       cities,
       themesByCity,
@@ -1007,8 +1219,6 @@ useEffect(() => {
       expandedCityIds,
       selectedCityId,
       selectedThemeId,
-      selectedPinId,
-      recentSearches,
     });
   }, [cities, themesByCity, pins, expandedCityIds, selectedCityId, selectedThemeId]);
 
@@ -1073,10 +1283,40 @@ useEffect(() => {
   };
 
   const deleteTheme = (cityId, themeId) => {
+    if (!window.confirm("정말 삭제하십니까?")) return;
     if (!confirm("테마를 삭제할까요? (해당 테마의 핀도 같이 삭제됩니다)")) return;
     setThemesByCity((prev) => {
       const list = prev[cityId] || [];
       return { ...prev, [cityId]: list.filter((x) => x.id !== themeId) };
+
+const openMoveTheme = (fromCityId, themeId) => {
+  setMoveThemeFromCityId(fromCityId);
+  setMoveThemeId(themeId);
+  setMoveThemeOpen(true);
+};
+
+const moveThemeToCity = (toCityId) => {
+  const fromCityId = moveThemeFromCityId;
+  const themeId = moveThemeId;
+  if (!fromCityId || !themeId || !toCityId || fromCityId === toCityId) return;
+  setThemesByCity((prev) => {
+    const from = prev[fromCityId] || [];
+    const moving = from.find((t) => t.id === themeId);
+    if (!moving) return prev;
+    const to = prev[toCityId] || [];
+    return {
+      ...prev,
+      [fromCityId]: from.filter((t) => t.id !== themeId),
+      [toCityId]: [...to, moving],
+    };
+  });
+  // move pins under that theme too
+  setPins((prev) => prev.map((p) => (p.themeId === themeId ? { ...p, cityId: toCityId } : p)));
+  if (selectedCityId === fromCityId && selectedThemeId === themeId) {
+    setSelectedCityId(toCityId);
+  }
+};
+
     });
     setPins((p) => p.filter((pin) => pin.themeId !== themeId));
     if (selectedThemeId === themeId) setSelectedThemeId("");
@@ -1117,6 +1357,13 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
       photos: data.photos || [],
       createdAt: Date.now(),
     };
+
+const updatePin = (pinId, patch) => {
+  setPins((prev) =>
+    prev.map((p) => (p.id === pinId ? { ...p, ...patch, updatedAt: Date.now() } : p))
+  );
+};
+
     setPins((prev) => [...prev, p]);
     setSelectedPinId(p.id);
     setFlyTarget([p.latlng.lat, p.latlng.lng]);
@@ -1124,6 +1371,7 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
   };
 
   const deletePin = (pinId) => {
+    if (!window.confirm("정말 삭제하십니까?")) return;
     setPins((p) => p.filter((x) => x.id !== pinId));
     if (selectedPinId === pinId) setSelectedPinId("");
   };
@@ -1135,6 +1383,8 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
     setSelectedPinId(pinId);
     setFlyTarget([p.latlng.lat, p.latlng.lng]);
     setFlyZoom(17);
+    setPinDetailId(pinId);
+    setPinDetailOpen(true);
     setSidebarOpen(false);
   };
 
@@ -1183,6 +1433,7 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
         onDeleteCity={deleteCity}
         onRenameTheme={renameTheme}
         onDeleteTheme={deleteTheme}
+          onMoveTheme={openMoveTheme}
         onOpenAddCategory={() => setAddCatOpen(true)}
         query={query}
         setQuery={setQuery}
@@ -1194,6 +1445,9 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
         recentSearches={recentSearches}
         onPickSearchResult={pickSearchResult}
         onDeleteRecent={deleteRecentSearch}
+          onClearMapSearch={clearMapSearchUI}
+          onFocusMapSearch={focusMapSearchUI}
+          showSearchPanel={showSearchPanel}
       />
 
       <div className="mapWrap">
@@ -1203,13 +1457,14 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
           center={DEFAULT_CENTER}
           zoom={DEFAULT_ZOOM}
           minZoom={5}
-          maxZoom={19}
+          maxZoom={18}
           maxBounds={KJ_BOUNDS}
           maxBoundsViscosity={1.0}
           worldCopyJump={false}
         >
           <TileLayer
             url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+            maxNativeZoom={18}
             attribution="&copy; OpenStreetMap contributors"
           />
 
@@ -1235,7 +1490,7 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
                   <Popup>
                     <div style={{ fontWeight: 900 }}>{p.name || "(이름 없음)"}</div>
                     <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-                      {p.krAddr || p.jpAddr || fmtLatLng(p.latlng.lat, p.latlng.lng)}
+                      {p.krAddr || p.jpAddr || ""}
                     </div>
                   </Popup>
                 </Marker>
@@ -1251,12 +1506,31 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
           })}
 
 {searchFocus ? (
-  <CircleMarker
-    center={[searchFocus.lat, searchFocus.lng]}
-    radius={10}
-    pathOptions={{ weight: 3, opacity: 1, fillOpacity: 0.15, color: "#111" }}
-  />
+  <>
+    <CircleMarker
+      center={[searchFocus.lat, searchFocus.lng]}
+      radius={10}
+      pathOptions={{ weight: 3, opacity: 1, fillOpacity: 0.15, color: "#111" }}
+    />
+    <Marker position={[searchFocus.lat, searchFocus.lng]} icon={iconBlue}>
+      <Popup>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 220 }}>
+          <div style={{ fontWeight: 700 }}>{searchFocus.name || "검색 위치"}</div>
+          <button
+            className="smallBtn"
+            onClick={() => {
+              openPinModalAt({ lat: searchFocus.lat, lng: searchFocus.lng });
+              setPinPrefill((p) => ({ ...p, name: searchFocus.name || p.name || "" }));
+            }}
+          >
+            이 위치 저장
+          </button>
+        </div>
+      </Popup>
+    </Marker>
+  </>
 ) : null}
+
 
           {userLoc ? (
             <CircleMarker
@@ -1286,8 +1560,9 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
           <button
             className="fab"
             aria-label="핀 추가"
-            onClick={() => setAddingPinMode(true)}
+            onClick={() => setAddingPinMode((p)=>!p)}
             title="핀 추가"
+            className={addingPinMode ? "fab active" : "fab"}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
               <path
@@ -1334,10 +1609,25 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
               (themesByCity[selectedCityId || cities[0]?.id || ""]?.[0]?.id || "")
             }
             initialLatLng={draftLatLng}
+            prefill={pinPrefill}
             onSave={savePin}
             onClose={() => setPinModalOpen(false)}
           />
         ) : null}
+{pinDetailOpen && pinDetailId && pins.find((x) => x.id === pinDetailId) ? (
+  <PinDetailModal
+    pin={pins.find((x) => x.id === pinDetailId)}
+    cities={cities}
+    themesByCity={themesByCity}
+    onClose={() => {
+      setPinDetailOpen(false);
+      setPinDetailId("");
+    }}
+    onUpdate={updatePin}
+    onDelete={deletePin}
+  />
+) : null}
+
       </div>
     </div>
   );
