@@ -308,3 +308,5 @@ html,body{height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Ro
   line-height:1;
 }
 .recentChip .x:hover{ background:#f3f4f6; }
+
+.clearBtn{width:36px;height:36px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;font-weight:900;cursor:pointer;}

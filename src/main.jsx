@@ -41,27 +41,14 @@ const iconRed = new L.Icon({
 });
 
 
-const KJ_BOUNDS = L.latLngBounds(L.latLng(30.0, 122.0), L.latLng(46.5, 146.5));
+const KJ_BOUNDS = L.latLngBounds(L.latLng(30.0, 122.0), L.latLng(46.5, 148.5));
 const DEFAULT_CENTER = [36.2, 134.5];
 const DEFAULT_ZOOM = 6;
 
-const BASE_LS_KEY = "travel_pin_map_v2";
-function getUrlSyncToken() {
-  try {
-    const h = (window.location.hash || "").replace(/^#/, "");
-    const params = new URLSearchParams(h);
-    return (params.get("sync") || params.get("k") || "").trim();
-  } catch {
-    return "";
-  }
-}
-function getStorageKey() {
-  const t = getUrlSyncToken();
-  return t ? `${BASE_LS_KEY}:sync:${t}` : BASE_LS_KEY;
-}
+const LS_KEY = "travel_pin_map_v2";
 function loadState() {
   try {
-    const raw = localStorage.getItem(getStorageKey());
+    const raw = localStorage.getItem(LS_KEY);
     if (!raw) return null;
     return JSON.parse(raw);
   } catch {
@@ -70,9 +57,95 @@ function loadState() {
 }
 function saveState(s) {
   try {
-    localStorage.setItem(getStorageKey(), JSON.stringify(s));
+    localStorage.setItem(LS_KEY, JSON.stringify(s));
   } catch {}
 }
+
+/** --------- Optional cloud sync (no login) ----------
+ * If Supabase env vars are set, the app syncs by URL hash key:
+ *   https://your-site/#sync=abcdef1234
+ * Open the SAME link on mobile/PC to sync automatically.
+ */
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+function syncEnabled() {
+  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+}
+
+function parseHashParams() {
+  const h = (window.location.hash || "").replace(/^#/, "");
+  const out = {};
+  for (const part of h.split("&")) {
+    if (!part) continue;
+    const [k, v] = part.split("=");
+    out[decodeURIComponent(k)] = decodeURIComponent(v || "");
+  }
+  return out;
+}
+
+function setHashParam(key, value) {
+  const p = parseHashParams();
+  p[key] = value;
+  const next = Object.entries(p)
+    .filter(([, v]) => String(v || "").length)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
+  window.location.hash = next ? `#${next}` : "";
+}
+
+function makeSyncKey() {
+  const chars = "abcdefghijkmnpqrstuvwxyz23456789";
+  let s = "";
+  for (let i = 0; i < 10; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+
+function getOrCreateSyncKey() {
+  const p = parseHashParams();
+  let k = String(p.sync || "").trim();
+  if (!k) {
+    k = makeSyncKey();
+    setHashParam("sync", k);
+  }
+  return k;
+}
+
+async function pullRemoteState(syncKey) {
+  if (!syncEnabled()) return null;
+  const key = String(syncKey || "").trim();
+  if (!key) return null;
+  const url =
+    `${SUPABASE_URL}/rest/v1/map_state?key=eq.${encodeURIComponent(key)}&select=payload,updated_at`;
+  const res = await fetch(url, {
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data?.[0] || null;
+}
+
+async function pushRemoteState(syncKey, payload) {
+  if (!syncEnabled()) return false;
+  const key = String(syncKey || "").trim();
+  if (!key) return false;
+  const body = { key, payload, updated_at: new Date().toISOString() };
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/map_state`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Prefer: "resolution=merge-duplicates",
+    },
+    body: JSON.stringify(body),
+  });
+  return res.ok;
+}
+
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
@@ -426,6 +499,9 @@ function PinModal({
             열기
           </button>
         </div>
+        <div className="badge" style={{ marginTop: 6 }}>
+          좌표가 아니라 주소로 검색합니다.
+        </div>
       </div>
 
       <div className="field">
@@ -540,9 +616,7 @@ function Sidebar({
   recentSearches,
   onPickSearchResult,
   onDeleteRecent,
-  onClearMapSearch,
-  onClose,
-  showSearchPanel,
+  onClearSearch,
 }) {
   const countCity = (cityId) => pins.filter((p) => p.cityId === cityId).length;
   const countTheme = (themeId) => pins.filter((p) => p.themeId === themeId).length;
@@ -575,13 +649,11 @@ function Sidebar({
               }
             }}
           />
+          {mapQuery ? (
+          <button className="clearBtn" onClick={() => onClearSearch?.()} title="지우기">×</button>
+        ) : null}
           <button className="searchBtn" onClick={() => onRunMapSearch?.()} disabled={searching}>
             {searching ? "..." : "검색"}
-          </button>
-          <button className="iconBtn" title="지우기" onClick={() => onClearMapSearch?.()} style={{marginLeft:4}}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
           </button>
           <button className="iconBtn" title="닫기" onClick={() => onClose?.()} style={{marginLeft:4}}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -590,7 +662,7 @@ function Sidebar({
           </button>
         </div>
 
-        {showSearchPanel && (searchResults?.length || recentSearches?.length) ? (
+        {(searchResults?.length || recentSearches?.length) ? (
           <div style={{marginTop:10}}>
             {searchResults?.length ? (
               <div>
@@ -782,6 +854,7 @@ function Sidebar({
 
 function App() {
   const loaded = loadState();
+  const syncKey = useMemo(() => getOrCreateSyncKey(), []);
 
   const [cities, setCities] = useState(
     loaded?.cities || [
@@ -804,8 +877,7 @@ function App() {
 const [mapQuery, setMapQuery] = useState("");
 const [searching, setSearching] = useState(false);
 const [searchResults, setSearchResults] = useState([]); // {id,name,displayName,lat,lng}
-const [showSearchPanel, setShowSearchPanel] = useState(true);
-const [recentSearches, setRecentSearches] = useState(loaded?.recentSearches || []); // strings
+const [recentSearches, setRecentSearches] = useState([]); // strings
 
 const deleteRecentSearch = (term) => {
   const t = String(term || "").trim();
@@ -813,23 +885,17 @@ const deleteRecentSearch = (term) => {
   setRecentSearches((prev) => prev.filter((x) => x !== t));
 };
 
-const clearMapSearchUI = () => {
-  setMapQuery("");
-  setSearchResults([]);
-  setShowSearchPanel(false);
-};
-
-const runMapSearch = async (term) => {
-  const q = String(term ?? mapQuery).trim();
+const runMapSearch = async () => {
+  const q = mapQuery.trim();
   if (!q) return;
   setSearching(true);
-  setShowSearchPanel(true);
   try {
-    const url =
-  "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=7&addressdetails=1&accept-language=ko&countrycodes=kr,jp&bounded=1&viewbox=" +
-  encodeURIComponent("122.0,46.5,148.5,30.0") +
-  "&q=" +
-  encodeURIComponent(q);
+    const viewbox = "122.0,46.5,148.5,30.0"; // left,top,right,bottom (KR+JP)
+const url =
+    "https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1" +
+    "&countrycodes=kr,jp&bounded=1&viewbox=" + encodeURIComponent(viewbox) +
+    "&accept-language=ko&q=" +
+    encodeURIComponent(q);
     const res = await fetch(url, {
       headers: { "Accept-Language": "ko" },
     });
@@ -844,6 +910,13 @@ const runMapSearch = async (term) => {
         lat: Number(r.lat),
         lng: Number(r.lon),
       };
+
+const clearMapSearch = () => {
+  setMapQuery("");
+  setSearchResults([]);
+  setSearchFocus(null);
+};
+
     });
     setSearchResults(results);
     setRecentSearches((prev) => {
@@ -881,6 +954,51 @@ const pickSearchResult = (r) => {
   const [addingPinMode, setAddingPinMode] = useState(false);
   const [searchFocus, setSearchFocus] = useState(null); // {lat,lng,name}
 
+
+// Pull remote state once on mount (if enabled)
+useEffect(() => {
+  let cancelled = false;
+  (async () => {
+    if (!syncEnabled()) return;
+    const remote = await pullRemoteState(syncKey);
+    if (cancelled || !remote?.payload) return;
+    try {
+      const p = remote.payload;
+      // Merge: prefer remote if it has any pins/cities/themes (or local empty)
+      if (p?.cities && p?.themesByCity && p?.pins) {
+        setCities(p.cities);
+        setThemesByCity(p.themesByCity);
+        setPins(p.pins);
+        if (Array.isArray(p.expandedCityIds)) setExpandedCityIds(p.expandedCityIds);
+        if (p.selectedCityId) setSelectedCityId(p.selectedCityId);
+        if (p.selectedThemeId) setSelectedThemeId(p.selectedThemeId);
+        if (p.selectedPinId) setSelectedPinId(p.selectedPinId);
+        if (Array.isArray(p.recentSearches)) setRecentSearches(p.recentSearches);
+      }
+    } catch {}
+  })();
+  return () => { cancelled = true; };
+}, []);
+
+// Push to remote (debounced) whenever local state changes
+useEffect(() => {
+  if (!syncEnabled()) return;
+  const payload = {
+    cities,
+    themesByCity,
+    pins,
+    expandedCityIds,
+    selectedCityId,
+    selectedThemeId,
+    selectedPinId,
+    recentSearches,
+  };
+  const t = setTimeout(() => {
+    pushRemoteState(syncKey, payload);
+  }, 1200);
+  return () => clearTimeout(t);
+}, [cities, themesByCity, pins, expandedCityIds, selectedCityId, selectedThemeId, selectedPinId, recentSearches]);
+
   useEffect(() => {
     saveState({
       cities,
@@ -889,9 +1007,10 @@ const pickSearchResult = (r) => {
       expandedCityIds,
       selectedCityId,
       selectedThemeId,
+      selectedPinId,
       recentSearches,
     });
-  }, [cities, themesByCity, pins, expandedCityIds, selectedCityId, selectedThemeId, recentSearches]);
+  }, [cities, themesByCity, pins, expandedCityIds, selectedCityId, selectedThemeId]);
 
   const toggleCityExpanded = (id) => {
     setExpandedCityIds((prev) =>
@@ -1068,16 +1187,13 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
         query={query}
         setQuery={setQuery}
         mapQuery={mapQuery}
-        setMapQuery={(v) => { setShowSearchPanel(true); setMapQuery(v); }}
+        setMapQuery={setMapQuery}
         onRunMapSearch={runMapSearch}
         searching={searching}
         searchResults={searchResults}
         recentSearches={recentSearches}
         onPickSearchResult={pickSearchResult}
         onDeleteRecent={deleteRecentSearch}
-        onClearMapSearch={clearMapSearchUI}
-        onClose={() => setSidebarOpen(false)}
-        showSearchPanel={showSearchPanel}
       />
 
       <div className="mapWrap">
@@ -1168,9 +1284,9 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
 
         <div className="fabs">
           <button
-            className={`fab ${addingPinMode ? "active" : ""}`}
+            className="fab"
             aria-label="핀 추가"
-            onClick={() => setAddingPinMode((v) => !v)}
+            onClick={() => setAddingPinMode(true)}
             title="핀 추가"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
