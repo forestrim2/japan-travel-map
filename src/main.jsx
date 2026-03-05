@@ -45,10 +45,23 @@ const KJ_BOUNDS = L.latLngBounds(L.latLng(30.0, 122.0), L.latLng(46.5, 146.5));
 const DEFAULT_CENTER = [36.2, 134.5];
 const DEFAULT_ZOOM = 6;
 
-const LS_KEY = "travel_pin_map_v2";
+const BASE_LS_KEY = "travel_pin_map_v2";
+function getUrlSyncToken() {
+  try {
+    const h = (window.location.hash || "").replace(/^#/, "");
+    const params = new URLSearchParams(h);
+    return (params.get("sync") || params.get("k") || "").trim();
+  } catch {
+    return "";
+  }
+}
+function getStorageKey() {
+  const t = getUrlSyncToken();
+  return t ? `${BASE_LS_KEY}:sync:${t}` : BASE_LS_KEY;
+}
 function loadState() {
   try {
-    const raw = localStorage.getItem(LS_KEY);
+    const raw = localStorage.getItem(getStorageKey());
     if (!raw) return null;
     return JSON.parse(raw);
   } catch {
@@ -57,7 +70,7 @@ function loadState() {
 }
 function saveState(s) {
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(s));
+    localStorage.setItem(getStorageKey(), JSON.stringify(s));
   } catch {}
 }
 function uid() {
@@ -413,9 +426,6 @@ function PinModal({
             열기
           </button>
         </div>
-        <div className="badge" style={{ marginTop: 6 }}>
-          좌표가 아니라 주소로 검색합니다.
-        </div>
       </div>
 
       <div className="field">
@@ -530,6 +540,9 @@ function Sidebar({
   recentSearches,
   onPickSearchResult,
   onDeleteRecent,
+  onClearMapSearch,
+  onClose,
+  showSearchPanel,
 }) {
   const countCity = (cityId) => pins.filter((p) => p.cityId === cityId).length;
   const countTheme = (themeId) => pins.filter((p) => p.themeId === themeId).length;
@@ -565,6 +578,11 @@ function Sidebar({
           <button className="searchBtn" onClick={() => onRunMapSearch?.()} disabled={searching}>
             {searching ? "..." : "검색"}
           </button>
+          <button className="iconBtn" title="지우기" onClick={() => onClearMapSearch?.()} style={{marginLeft:4}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+          </button>
           <button className="iconBtn" title="닫기" onClick={() => onClose?.()} style={{marginLeft:4}}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
@@ -572,7 +590,7 @@ function Sidebar({
           </button>
         </div>
 
-        {(searchResults?.length || recentSearches?.length) ? (
+        {showSearchPanel && (searchResults?.length || recentSearches?.length) ? (
           <div style={{marginTop:10}}>
             {searchResults?.length ? (
               <div>
@@ -786,7 +804,8 @@ function App() {
 const [mapQuery, setMapQuery] = useState("");
 const [searching, setSearching] = useState(false);
 const [searchResults, setSearchResults] = useState([]); // {id,name,displayName,lat,lng}
-const [recentSearches, setRecentSearches] = useState([]); // strings
+const [showSearchPanel, setShowSearchPanel] = useState(true);
+const [recentSearches, setRecentSearches] = useState(loaded?.recentSearches || []); // strings
 
 const deleteRecentSearch = (term) => {
   const t = String(term || "").trim();
@@ -794,14 +813,23 @@ const deleteRecentSearch = (term) => {
   setRecentSearches((prev) => prev.filter((x) => x !== t));
 };
 
-const runMapSearch = async () => {
-  const q = mapQuery.trim();
+const clearMapSearchUI = () => {
+  setMapQuery("");
+  setSearchResults([]);
+  setShowSearchPanel(false);
+};
+
+const runMapSearch = async (term) => {
+  const q = String(term ?? mapQuery).trim();
   if (!q) return;
   setSearching(true);
+  setShowSearchPanel(true);
   try {
     const url =
-      "https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1&q=" +
-      encodeURIComponent(q);
+  "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=7&addressdetails=1&accept-language=ko&countrycodes=kr,jp&bounded=1&viewbox=" +
+  encodeURIComponent("122.0,46.5,148.5,30.0") +
+  "&q=" +
+  encodeURIComponent(q);
     const res = await fetch(url, {
       headers: { "Accept-Language": "ko" },
     });
@@ -861,8 +889,9 @@ const pickSearchResult = (r) => {
       expandedCityIds,
       selectedCityId,
       selectedThemeId,
+      recentSearches,
     });
-  }, [cities, themesByCity, pins, expandedCityIds, selectedCityId, selectedThemeId]);
+  }, [cities, themesByCity, pins, expandedCityIds, selectedCityId, selectedThemeId, recentSearches]);
 
   const toggleCityExpanded = (id) => {
     setExpandedCityIds((prev) =>
@@ -1039,13 +1068,16 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
         query={query}
         setQuery={setQuery}
         mapQuery={mapQuery}
-        setMapQuery={setMapQuery}
+        setMapQuery={(v) => { setShowSearchPanel(true); setMapQuery(v); }}
         onRunMapSearch={runMapSearch}
         searching={searching}
         searchResults={searchResults}
         recentSearches={recentSearches}
         onPickSearchResult={pickSearchResult}
         onDeleteRecent={deleteRecentSearch}
+        onClearMapSearch={clearMapSearchUI}
+        onClose={() => setSidebarOpen(false)}
+        showSearchPanel={showSearchPanel}
       />
 
       <div className="mapWrap">
@@ -1136,9 +1168,9 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
 
         <div className="fabs">
           <button
-            className="fab"
+            className={`fab ${addingPinMode ? "active" : ""}`}
             aria-label="핀 추가"
-            onClick={() => setAddingPinMode(true)}
+            onClick={() => setAddingPinMode((v) => !v)}
             title="핀 추가"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
