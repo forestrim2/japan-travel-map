@@ -100,16 +100,6 @@ function openGoogleByAddress(addr) {
   );
 }
 
-function openGoogleSearchQuery(query) {
-  const q = encodeURIComponent(String(query || "").trim());
-  if (!q) return;
-  window.open(
-    `https://www.google.com/maps/search/?api=1&query=${q}`,
-    "_blank",
-    "noopener,noreferrer"
-  );
-}
-
 /** --------- Geocoding (reverse) ---------- */
 async function reverseGeocode(lat, lng, lang) {
   const url =
@@ -585,7 +575,6 @@ function Sidebar({
   onPickSearchResult,
   onDeleteRecent,
   onClearSearch,
-  onGoogleSearch,
 }) {
   const countCity = (cityId) => pins.filter((p) => p.cityId === cityId).length;
   const countTheme = (themeId) => pins.filter((p) => p.themeId === themeId).length;
@@ -629,7 +618,22 @@ function Sidebar({
           </button>
         </div>
 
-        {(hasSearched || searchResults?.length || recentSearches?.length) ? (
+        <div style={{ marginTop: 8 }}>
+          <button
+            className="smallBtn"
+            style={{ width: "100%" }}
+            onClick={() => {
+              const q = String(mapQuery || "").trim();
+              if (!q) return;
+              openGoogleByAddress(q);
+            }}
+            disabled={!String(mapQuery || "").trim()}
+          >
+            구글에서 바로 검색
+          </button>
+        </div>
+
+        {(searchResults?.length || recentSearches?.length) ? (
           <div style={{marginTop:10}}>
             {(hasSearched && !searching) ? (
               <div>
@@ -651,14 +655,7 @@ function Sidebar({
                     ))}
                   </div>
                 ) : (
-                  <div>
-                    <div className="emptyHint">검색 결과 없음</div>
-                    <div style={{marginTop:8}}>
-                      <button className="smallBtn" onClick={() => onGoogleSearch?.()}>
-                        구글 지도에서 검색
-                      </button>
-                    </div>
-                  </div>
+                  <div className="emptyHint">검색 결과 없음</div>
                 )}
               </div>
             ) : null}
@@ -1036,21 +1033,7 @@ for (const qTry of queriesToTry) {
       };
     });
 
-    const dedupedResults = [];
-    const seenSearchKeys = new Set();
-    for (const item of results) {
-      const key = [
-        Number(item.lat).toFixed(6),
-        Number(item.lng).toFixed(6),
-        String(item.name || "").trim(),
-        String(item.displayName || "").trim(),
-      ].join("|");
-      if (seenSearchKeys.has(key)) continue;
-      seenSearchKeys.add(key);
-      dedupedResults.push(item);
-    }
-
-    setSearchResults(dedupedResults);
+    setSearchResults(results);
     setRecentSearches((prev) => {
       const next = [q, ...prev.filter((x) => x !== q)];
       return next.slice(0, 5);
@@ -1070,19 +1053,6 @@ const pickSearchResult = (r) => {
   setFlyZoom(17);
   setSearchFocus({ lat: r.lat, lng: r.lng, name: r.name || "" });
   setSidebarOpen(false);
-};
-
-
-const openGoogleSearchFromQuery = () => {
-  const q = String(mapQuery || "").trim();
-  if (!q) return;
-  if (searchResults?.length) {
-    const first = searchResults[0];
-    setFlyTarget([first.lat, first.lng]);
-    setFlyZoom(17);
-    setSearchFocus({ lat: first.lat, lng: first.lng, name: first.name || "" });
-  }
-  openGoogleSearchQuery(q);
 };
 
 
@@ -1295,7 +1265,6 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
         onPickSearchResult={pickSearchResult}
         onDeleteRecent={deleteRecentSearch}
         onClearSearch={clearMapSearch}
-        onGoogleSearch={openGoogleSearchFromQuery}
       />
 
       <div className="mapWrap">
