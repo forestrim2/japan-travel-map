@@ -575,6 +575,7 @@ function Sidebar({
   onPickSearchResult,
   onDeleteRecent,
   onClearSearch,
+  onGoogleSearch,
 }) {
   const countCity = (cityId) => pins.filter((p) => p.cityId === cityId).length;
   const countTheme = (themeId) => pins.filter((p) => p.themeId === themeId).length;
@@ -617,16 +618,11 @@ function Sidebar({
             </svg>
           </button>
         </div>
-
-        <div style={{ marginTop: 8 }}>
+        <div style={{marginTop:8, marginBottom:10}}>
           <button
             className="smallBtn"
-            style={{ width: "100%" }}
-            onClick={() => {
-              const q = String(mapQuery || "").trim();
-              if (!q) return;
-              openGoogleByAddress(q);
-            }}
+            style={{width:"100%", justifyContent:"center", display:"flex"}}
+            onClick={() => onGoogleSearch?.()}
             disabled={!String(mapQuery || "").trim()}
           >
             구글에서 바로 검색
@@ -1055,7 +1051,11 @@ const pickSearchResult = (r) => {
   setSidebarOpen(false);
 };
 
-
+const openGoogleSearch = () => {
+  const q = String(mapQuery || "").trim();
+  if (!q) return;
+  window.open(`https://www.google.com/maps/search/${encodeURIComponent(q)}`, "_blank", "noopener,noreferrer");
+};
 
   const [addCatOpen, setAddCatOpen] = useState(false);
   const [pinModalOpen, setPinModalOpen] = useState(false);
@@ -1265,6 +1265,7 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
         onPickSearchResult={pickSearchResult}
         onDeleteRecent={deleteRecentSearch}
         onClearSearch={clearMapSearch}
+        onGoogleSearch={openGoogleSearch}
       />
 
       <div className="mapWrap">
