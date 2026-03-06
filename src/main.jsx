@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import "leaflet/dist/leaflet.css";
 import "./styles.css";
 import L from "leaflet";
-import { createClient } from "@supabase/supabase-js";
 import {
   MapContainer,
   TileLayer,
@@ -46,40 +45,46 @@ const KJ_BOUNDS = L.latLngBounds(L.latLng(30.0, 122.0), L.latLng(46.5, 146.5));
 const DEFAULT_CENTER = [36.2, 134.5];
 const DEFAULT_ZOOM = 6;
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
-const supabase = SUPABASE_URL && SUPABASE_ANON_KEY ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
-
-// 테이블: travel_maps (id text primary key, data jsonb, updated_at timestamptz default now())
-
-
-
-const SYNC_HASH_PREFIX = "sync=";
-function getOrCreateSyncId() {
-  const h = String(window.location.hash || "").replace(/^#/, "");
-  if (h.startsWith(SYNC_HASH_PREFIX) && h.slice(SYNC_HASH_PREFIX.length)) {
-    return h.slice(SYNC_HASH_PREFIX.length);
-  }
-  const id = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-  // 로그인/코드 입력 없이 "같은 링크"로 동기화되도록 해시를 자동 생성합니다.
-  window.location.hash = SYNC_HASH_PREFIX + id;
-  return id;
-}
 const LS_KEY = "travel_pin_map_v2";
 function loadState() {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+
+    // Backward/forward compatible: ensure expected shape exists.
+    if (parsed && typeof parsed === "object") {
+      return {
+        cities: Array.isArray(parsed.cities) ? parsed.cities : undefined,
+        themesByCity: parsed.themesByCity && typeof parsed.themesByCity === "object" ? parsed.themesByCity : undefined,
+        pins: Array.isArray(parsed.pins) ? parsed.pins : undefined,
+        expandedCityIds: Array.isArray(parsed.expandedCityIds) ? parsed.expandedCityIds : undefined,
+        selectedCityId: typeof parsed.selectedCityId === "string" ? parsed.selectedCityId : undefined,
+        selectedThemeId: typeof parsed.selectedThemeId === "string" ? parsed.selectedThemeId : undefined,
+        recentSearches: Array.isArray(parsed.recentSearches) ? parsed.recentSearches : undefined,
+      };
+    }
+    return null;
   } catch {
     return null;
   }
 }
+
 function saveState(s) {
+  try {
+    // Safety backup to prevent data loss across deployments / schema tweaks.
+    const prev = localStorage.getItem(LS_KEY);
+    if (prev) {
+      localStorage.setItem(LS_KEY + "_backup", prev);
+      localStorage.setItem(LS_KEY + "_backup_at", String(Date.now()));
+    }
+  } catch {}
+
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(s));
   } catch {}
 }
+
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
@@ -88,6 +93,16 @@ function fmtLatLng(lat, lng) {
 }
 function openGoogleByAddress(addr) {
   const q = encodeURIComponent(addr || "");
+  window.open(
+    `https://www.google.com/maps/search/?api=1&query=${q}`,
+    "_blank",
+    "noopener,noreferrer"
+  );
+}
+
+function openGoogleSearchQuery(query) {
+  const q = encodeURIComponent(String(query || "").trim());
+  if (!q) return;
   window.open(
     `https://www.google.com/maps/search/?api=1&query=${q}`,
     "_blank",
@@ -224,237 +239,6 @@ function Modal({ title, onClose, children, footer }) {
   );
 }
 
-
-function PinDetailModal({
-  pin,
-  cities,
-  themesByCity,
-  onClose,
-  onUpdate,
-  onDelete,
-}) {
-  const [editing, setEditing] = useState(false);
-
-  const [cityId, setCityId] = useState(pin.cityId || cities[0]?.id || "");
-  const themes = themesByCity[cityId] || [];
-  const [themeId, setThemeId] = useState(pin.themeId || themes[0]?.id || "");
-  useEffect(() => {
-    const nextThemes = themesByCity[cityId] || [];
-    if (!nextThemes.length) setThemeId("");
-    else if (nextThemes.some((t) => t.id === themeId)) return;
-    else setThemeId(nextThemes[0]?.id || "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cityId]);
-
-  const [name, setName] = useState(pin.name || "");
-  const [jpAddr, setJpAddr] = useState(pin.jpAddr || "");
-  const [krAddr, setKrAddr] = useState(pin.krAddr || "");
-  const [memo, setMemo] = useState(pin.memo || "");
-  const [links, setLinks] = useState(Array.isArray(pin.links) && pin.links.length ? pin.links : [""]);
-  const [photos, setPhotos] = useState(Array.isArray(pin.photos) ? pin.photos : []);
-  const [photoIndex, setPhotoIndex] = useState(0);
-
-  const addPhotoFiles = async (files) => {
-    const list = Array.from(files || []);
-    const toDataUrl = (file) =>
-      new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(String(r.result));
-        r.onerror = reject;
-        r.readAsDataURL(file);
-      });
-    const next = [];
-    for (const f of list) {
-      try {
-        const url = await toDataUrl(f);
-        next.push({ id: uid(), name: f.name, dataUrl: url });
-      } catch {}
-    }
-    setPhotos((prev) => [...prev, ...next]);
-    setPhotoIndex(0);
-  };
-
-  const streetQuery = (krAddr || jpAddr).trim();
-  const streetUrl = streetQuery
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(streetQuery)}`
-    : "";
-
-  return (
-    <Modal
-      title="핀 상세"
-      onClose={onClose}
-      footer={
-        <>
-          <button className="ghost" onClick={onClose}>
-            닫기
-          </button>
-          <button
-            className="ghost"
-            onClick={() => {
-              if (!window.confirm("정말 삭제하십니까?")) return;
-              onDelete(pin.id);
-              onClose();
-            }}
-          >
-            삭제
-          </button>
-          <button
-            className="primary"
-            onClick={() => {
-              if (!editing) return setEditing(true);
-              onUpdate(pin.id, {
-                cityId,
-                themeId,
-                name: name.trim(),
-                jpAddr: jpAddr.trim(),
-                krAddr: krAddr.trim(),
-                memo,
-                links: links.map((x) => String(x || "").trim()).filter(Boolean),
-                photos,
-              });
-              setEditing(false);
-            }}
-          >
-            {editing ? "저장" : "수정"}
-          </button>
-        </>
-      }
-    >
-      <div className="field">
-        <label>도시</label>
-        <select value={cityId} onChange={(e) => setCityId(e.target.value)} disabled={!editing}>
-          {cities.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="field">
-        <label>테마</label>
-        <select value={themeId} onChange={(e) => setThemeId(e.target.value)} disabled={!editing}>
-          {(themesByCity[cityId] || []).map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="field">
-        <label>거래처명</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} disabled={!editing} />
-      </div>
-
-      <div className="field">
-        <label>일본 주소</label>
-        <input value={jpAddr} onChange={(e) => setJpAddr(e.target.value)} disabled={!editing} />
-      </div>
-
-      <div className="field">
-        <label>한국 주소</label>
-        <input value={krAddr} onChange={(e) => setKrAddr(e.target.value)} disabled={!editing} />
-      </div>
-
-      <div className="field">
-        <label>구글 로드뷰(주소 기반)</label>
-        <div className="linkRow">
-          <input value={streetQuery} readOnly />
-          <button className="smallBtn" onClick={() => openGoogleByAddress(streetQuery)} disabled={!streetQuery}>
-            열기
-          </button>
-        </div>
-        {streetUrl ? <div className="badge" style={{ marginTop: 6 }}>{streetUrl}</div> : null}
-      </div>
-
-      <div className="field">
-        <label>메모</label>
-        <textarea value={memo} onChange={(e) => setMemo(e.target.value)} disabled={!editing} />
-      </div>
-
-      <div className="field">
-        <label>링크</label>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {links.map((v, i) => (
-            <div key={i} className="linkRow">
-              <input value={v} onChange={(e) => {
-                const next = [...links];
-                next[i] = e.target.value;
-                setLinks(next);
-              }} disabled={!editing} placeholder="https://..." />
-              {editing ? (
-                <button className="smallBtn danger" onClick={() => {
-                  const next = links.filter((_, idx) => idx !== i);
-                  setLinks(next.length ? next : [""]);
-                }}>삭제</button>
-              ) : null}
-            </div>
-          ))}
-          {editing ? (
-            <button className="smallBtn" onClick={() => setLinks((p) => [...p, ""])}>
-              + 링크 추가
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="field">
-        <label>사진</label>
-        {editing ? (
-          <input type="file" accept="image/*" multiple onChange={(e) => addPhotoFiles(e.target.files)} />
-        ) : null}
-        {photos.length ? (
-          <div className="photoWrap">
-            <img src={photos[Math.min(photoIndex, photos.length - 1)].dataUrl} alt="photo" />
-            <div className="photoNav">
-              <button className="smallBtn" onClick={() => setPhotoIndex((p) => (p - 1 + photos.length) % photos.length)}>
-                이전
-              </button>
-              <span className="badge">
-                {Math.min(photoIndex + 1, photos.length)}/{photos.length}
-              </span>
-              <button className="smallBtn" onClick={() => setPhotoIndex((p) => (p + 1) % photos.length)}>
-                다음
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="badge">사진 없음</div>
-        )}
-      </div>
-    </Modal>
-  );
-}
-
-
-function MoveThemeModal({ cities, themesByCity, fromCityId, themeId, onMove, onClose }) {
-  const [toCityId, setToCityId] = useState(fromCityId);
-  return (
-    <Modal
-      title="테마 이동"
-      onClose={onClose}
-      footer={
-        <>
-          <button className="ghost" onClick={onClose}>취소</button>
-          <button className="primary" onClick={() => { onMove(toCityId); onClose(); }}>이동</button>
-        </>
-      }
-    >
-      <div className="field">
-        <label>대상 도시</label>
-        <select value={toCityId} onChange={(e) => setToCityId(e.target.value)}>
-          {cities.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </div>
-    </Modal>
-  );
-}
-
 function AddCategoryModal({ cities, onAddCity, onAddTheme, onClose }) {
   const [pick, setPick] = useState("city");
   const [name, setName] = useState("");
@@ -541,16 +325,22 @@ function PinModal({
   const [name, setName] = useState(prefill?.name || "");
   const [jpAddr, setJpAddr] = useState(prefill?.jpAddr || "");
   const [krAddr, setKrAddr] = useState(prefill?.krAddr || "");
-
-  useEffect(() => {
-    setName(prefill?.name || "");
-    setJpAddr(prefill?.jpAddr || "");
-    setKrAddr(prefill?.krAddr || "");
-  }, [prefill, initialLatLng]);
   const [memo, setMemo] = useState("");
   const [links, setLinks] = useState([""]);
   const [photos, setPhotos] = useState([]);
   const [photoIndex, setPhotoIndex] = useState(0);
+
+  useEffect(() => {
+    if (!prefill) return;
+    if (!name && prefill.name) setName(prefill.name);
+    if (!krAddr && prefill.krAddr) setKrAddr(prefill.krAddr);
+    if (!jpAddr && prefill.jpAddr) setJpAddr(prefill.jpAddr);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill?.name, prefill?.krAddr, prefill?.jpAddr]);
+
+  const latlngText = initialLatLng
+    ? fmtLatLng(initialLatLng.lat, initialLatLng.lng)
+    : "";
 
   const addPhotoFiles = async (files) => {
     const list = Array.from(files || []);
@@ -657,27 +447,31 @@ function PinModal({
       </div>
 
       <div className="field">
-  <label>구글 로드뷰(주소 기반)</label>
-  <div className="linkRow">
-    <input value={(krAddr || jpAddr).trim()} readOnly />
-    <button
-      className="smallBtn"
-      onClick={() => openGoogleByAddress((krAddr || jpAddr).trim())}
-      disabled={!((krAddr || jpAddr).trim())}
-    >
-      열기
-    </button>
-  </div>
-  <div className="badge" style={{ marginTop: 6 }}>
-    {(() => {
-      const q = (krAddr || jpAddr).trim();
-      return q ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}` : "";
-    })()}
-  </div>
-</div>
+        <label>구글(로드뷰 검색용)</label>
+        <div className="linkRow">
+          <input
+            value={
+              (krAddr || jpAddr)
+                ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                    krAddr || jpAddr
+                  )}`
+                : ""
+            }
+            readOnly
+          />
+          <button
+            className="smallBtn"
+            onClick={() => openGoogleByAddress(krAddr || jpAddr)}
+          >
+            열기
+          </button>
+        </div>
+        <div className="badge" style={{ marginTop: 6 }}>
+          좌표가 아니라 주소로 검색합니다.
+        </div>
+      </div>
 
-<div className="field">
-  <label>메모</label>      <div className="field">
+      <div className="field">
         <label>메모</label>
         <textarea value={memo} onChange={(e) => setMemo(e.target.value)} />
       </div>
@@ -763,7 +557,6 @@ function PinModal({
 
 function Sidebar({
   open,
-  onClose,
   cities,
   themesByCity,
   pins,
@@ -779,7 +572,6 @@ function Sidebar({
   onDeleteCity,
   onRenameTheme,
   onDeleteTheme,
-  onMoveTheme,
   onOpenAddCategory,
   query,
   setQuery,
@@ -788,12 +580,12 @@ function Sidebar({
   onRunMapSearch,
   searching,
   searchResults,
+  hasSearched,
   recentSearches,
   onPickSearchResult,
   onDeleteRecent,
-  onClearMapSearch,
-  onFocusMapSearch,
-  showSearchPanel,
+  onClearSearch,
+  onGoogleSearch,
 }) {
   const countCity = (cityId) => pins.filter((p) => p.cityId === cityId).length;
   const countTheme = (themeId) => pins.filter((p) => p.themeId === themeId).length;
@@ -819,7 +611,6 @@ function Sidebar({
             value={mapQuery}
             onChange={(e) => setMapQuery(e.target.value)}
             placeholder="장소/주소 검색"
-            onFocus={() => onFocusMapSearch?.()}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
@@ -827,41 +618,48 @@ function Sidebar({
               }
             }}
           />
+
           <button className="searchBtn" onClick={() => onRunMapSearch?.()} disabled={searching}>
             {searching ? "..." : "검색"}
           </button>
-          <button className="iconBtn" title="지우기" onClick={() => onClearMapSearch?.()} style={{marginLeft:4}}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-              <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-          </button>
-          <button className="iconBtn" title="목록 닫기" onClick={() => onClose?.()} style={{marginLeft:4}}>
+          <button className="iconBtn" title="초기화" onClick={() => onClearSearch?.()} style={{marginLeft:4}}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
             </svg>
           </button>
         </div>
 
-        {(showSearchPanel && searchResults?.length || recentSearches?.length) ? (
+        {(hasSearched || searchResults?.length || recentSearches?.length) ? (
           <div style={{marginTop:10}}>
-            {searchResults?.length ? (
+            {(hasSearched && !searching) ? (
               <div>
                 <div className="sectionTitle" style={{margin: "6px 0"}}>검색 결과</div>
-                <div className="list" style={{gap:6}}>
-                  {searchResults.map((r) => (
-                    <div key={r.id} className="item" onClick={() => onPickSearchResult?.(r)}>
-                      <div style={{minWidth:0}}>
-                        <div className="name">{r.name}</div>
-                        <div className="sub">{r.displayName}</div>
+                {searchResults?.length ? (
+                  <div className="list" style={{gap:6, maxHeight:240, overflowY:"auto"}}>
+                    {searchResults.map((r) => (
+                      <div key={r.id} className="item" onClick={() => onPickSearchResult?.(r)}>
+                        <div style={{minWidth:0}}>
+                          <div className="name">{r.name}</div>
+                          <div className="sub">{r.displayName}</div>
+                        </div>
+                        <div className="right">
+                          <button className="smallBtn" onClick={(e) => { e.stopPropagation(); onPickSearchResult?.(r); }}>
+                            이동
+                          </button>
+                        </div>
                       </div>
-                      <div className="right">
-                        <button className="smallBtn" onClick={(e) => { e.stopPropagation(); onPickSearchResult?.(r); }}>
-                          이동
-                        </button>
-                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div>
+                    <div className="emptyHint">검색 결과 없음</div>
+                    <div style={{marginTop:8}}>
+                      <button className="smallBtn" onClick={() => onGoogleSearch?.()}>
+                        구글 지도에서 검색
+                      </button>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
               </div>
             ) : null}
 
@@ -870,22 +668,29 @@ function Sidebar({
                 <div className="sectionTitle" style={{margin: "6px 0"}}>최근 검색</div>
                 <div style={{display:"flex", flexWrap:"wrap", gap:8}}>
                   {recentSearches.map((t) => (
-                    <div key={t} className="recentChip" onClick={() => { setMapQuery(t); setTimeout(() => onRunMapSearch?.(t), 0); }}>
-                      <span style={{maxWidth:180, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{t}</span>
-                      <button
-                        className="x"
-                        title="삭제"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          // delete only this item
-                          // we can't setRecentSearches here (in Sidebar), so call handler if provided
-                          onDeleteRecent?.(t);
-                        }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
+  <div
+    key={t}
+    className="recentChip"
+    onClick={() => {
+      setMapQuery(t);
+      setTimeout(() => onRunMapSearch?.(t), 0);
+    }}
+  >
+    <span style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      {t}
+    </span>
+    <button
+      className="chipX"
+      title="최근검색 삭제"
+      onClick={(e) => {
+        e.stopPropagation();
+        onDeleteRecent?.(t);
+      }}
+    >
+      ×
+    </button>
+  </div>
+))}
                 </div>
               </div>
             ) : null}
@@ -956,13 +761,6 @@ function Sidebar({
                         <div style={{ display: "flex", gap: 8 }}>
                           <button
                             className="iconBtn"
-                            title="이동"
-                            onClick={() => onMoveTheme?.(c.id, t.id)}
-                          >
-                            {icon("M5 9l-3 3 3 3M2 12h10M19 15l3-3-3-3M22 12H12")}
-                          </button>
-                          <button
-                            className="iconBtn"
                             title="이름 변경"
                             onClick={() => onRenameTheme(c.id, t.id)}
                           >
@@ -979,9 +777,13 @@ function Sidebar({
                       </div>
                     ))}
 
+                    <div className="sectionTitle" style={{ marginTop: 8 }}>
+                      소분류 목록
+                    </div>
+
                     {pins
                       .filter((p) => p.cityId === c.id)
-                      .filter((p) => (selectedThemeId ? p.themeId === selectedThemeId : false))
+                      .filter((p) => (selectedThemeId ? p.themeId === selectedThemeId : true))
                       .filter((p) => {
                         const q = query.trim().toLowerCase();
                         if (!q) return true;
@@ -1002,19 +804,18 @@ function Sidebar({
                           <div style={{ minWidth: 0 }}>
                             <div className="name">{p.name || "(이름 없음)"}</div>
                             <div className="sub">
-                              {p.krAddr || p.jpAddr || ""}
+                              {p.krAddr || p.jpAddr || fmtLatLng(p.latlng.lat, p.latlng.lng)}
                             </div>
                           </div>
                           <div className="right">
                             <button
-                              className="iconBtn"
-                              title="삭제"
+                              className="smallBtn danger"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 onSelectPin(p.id, true);
                               }}
                             >
-                              {icon("M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14")}
+                              삭제
                             </button>
                           </div>
                         </div>
@@ -1037,8 +838,7 @@ function Sidebar({
 }
 
 function App() {
-  const syncId = useMemo(() => getOrCreateSyncId(), []);
-  const loaded = loadState();
+  const loaded = useMemo(() => loadState(), []);
 
   const [cities, setCities] = useState(
     loaded?.cities || [
@@ -1053,19 +853,16 @@ function App() {
   const [selectedCityId, setSelectedCityId] = useState(loaded?.selectedCityId || "");
   const [selectedThemeId, setSelectedThemeId] = useState(loaded?.selectedThemeId || "");
   const [selectedPinId, setSelectedPinId] = useState("");
-  const [pinDetailOpen, setPinDetailOpen] = useState(false);
-  const [pinDetailId, setPinDetailId] = useState("");
 
   const [query, setQuery] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
 // Map search (Nominatim) + recent searches (max 5)
 const [mapQuery, setMapQuery] = useState("");
-
-  const [showSearchPanel, setShowSearchPanel] = useState(false);
 const [searching, setSearching] = useState(false);
+const [hasSearched, setHasSearched] = useState(false);
 const [searchResults, setSearchResults] = useState([]); // {id,name,displayName,lat,lng}
-const [recentSearches, setRecentSearches] = useState([]); // strings
+ const [recentSearches, setRecentSearches] = useState(loaded?.recentSearches || []); // strings
 
 const deleteRecentSearch = (term) => {
   const t = String(term || "").trim();
@@ -1073,32 +870,187 @@ const deleteRecentSearch = (term) => {
   setRecentSearches((prev) => prev.filter((x) => x !== t));
 };
 
-const runMapSearch = async () => {
-  const q = mapQuery.trim();
+const clearMapSearch = () => {
+  setMapQuery("");
+  setSearchResults([]);
+  // keep recentSearches
+setSearching(false);
+  setSearchFocus(null);
+};
+
+const runMapSearch = async (term) => {
+  const qRaw = (term ?? mapQuery).trim();
+  const q = String(qRaw || "").trim();
   if (!q) return;
+
+  const buildQueryVariants = (s) => {
+    const base = String(s || "").trim();
+    const variants = [base];
+
+    // Example: "대영로243번길" -> "대영로 243번길"
+    const spacedDigits = base.replace(/([가-힣])([0-9])/g, "$1 $2");
+    if (spacedDigits !== base) variants.push(spacedDigits);
+
+    // Remove common administrative suffix for fallback (do NOT over-normalize).
+    const noGwang = base.replace(/광역시/g, "시").replace(/특별시/g, "시");
+    if (noGwang !== base) variants.push(noGwang);
+
+    // Dedup while preserving order
+    return Array.from(new Set(variants)).slice(0, 3);
+  };
+
+  const queriesToTry = buildQueryVariants(q);
+
+  // keep input in sync when called from recent chips
+  if (term != null) setMapQuery(q);
+
   setSearching(true);
+  setHasSearched(true);
   try {
-    const url =
-      "https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1&countrycodes=kr,jp&bounded=1&viewbox=" +
-      encodeURIComponent("122,46.5,146.5,30") +
-      "&q=" +
-      encodeURIComponent(q);
-    const res = await fetch(url, {
-      headers: { "Accept-Language": "ko" },
+    // Restrict to Korea + Japan only, support Korean queries for Japan places.
+// First try bounded search (faster/cleaner). If no results, retry unbounded.
+// If still none, fall back to Photon (often better for detailed street addresses).
+const viewbox = [
+  120.0, 46.5, // left, top
+  150.5, 30.0, // right, bottom
+].join(",");
+
+const bbox = [120.0, 30.0, 150.5, 46.5]; // left,bottom,right,top
+
+const fetchJson = async (url) => {
+  const res = await fetch(url, { headers: { "Accept-Language": "ko" } });
+  return await res.json();
+};
+
+
+const nominatimBase =
+  "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=100&addressdetails=1&namedetails=1&extratags=1&dedupe=1";
+
+const nominatimUrl = (qTry, bounded) =>
+  nominatimBase +
+  "&accept-language=ko" +
+  "&countrycodes=kr,jp" +
+  (bounded ? "&bounded=1&viewbox=" + encodeURIComponent(viewbox) : "") +
+  "&q=" +
+  encodeURIComponent(qTry);
+
+const photonUrl = (qTry) =>
+  "https://photon.komoot.io/api/?limit=80&lang=ko" +
+  "&bbox=" +
+  encodeURIComponent(bbox.join(",")) +
+  "&q=" +
+  encodeURIComponent(qTry);
+
+const mapsCoUrl = (qTry) =>
+  "https://geocode.maps.co/search?q=" + encodeURIComponent(qTry) + "&format=json";
+
+let raw = [];
+let usedQuery = q;
+
+for (const qTry of queriesToTry) {
+  usedQuery = qTry;
+
+  // 1) Nominatim bounded -> unbounded
+  try {
+    let data = await fetchJson(nominatimUrl(qTry, true));
+    raw = Array.isArray(data) ? data : [];
+    if (!raw.length) {
+      data = await fetchJson(nominatimUrl(qTry, false));
+      raw = Array.isArray(data) ? data : [];
+    }
+  } catch {
+    raw = [];
+  }
+
+  // 2) Photon fallback (often better for Korean road-name addresses)
+  if (!raw.length) {
+    try {
+      const pdata = await fetchJson(photonUrl(qTry));
+      const feats = Array.isArray(pdata?.features) ? pdata.features : [];
+      raw = feats
+        .map((f) => {
+          const lon = f?.geometry?.coordinates?.[0];
+          const lat = f?.geometry?.coordinates?.[1];
+          const p = f?.properties || {};
+          const name = p.name || "";
+          const street = [p.street, p.housenumber].filter(Boolean).join(" ").trim();
+          const place = [p.city, p.state].filter(Boolean).join(", ").trim();
+          const display_name =
+            (name ? name : street || qTry) + (place ? ", " + place : "");
+          return {
+            lat,
+            lon,
+            display_name,
+            address: { country_code: p.countrycode },
+          };
+        })
+        .filter((r) => Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lon)));
+    } catch {
+      raw = [];
+    }
+  }
+
+  // 3) maps.co fallback (sometimes returns results when Nominatim throttles)
+  if (!raw.length) {
+    try {
+      const mdata = await fetchJson(mapsCoUrl(qTry));
+      const arr = Array.isArray(mdata) ? mdata : [];
+      raw = arr.map((r) => ({
+        lat: r.lat,
+        lon: r.lon,
+        display_name: r.display_name || r.display_name,
+        address: r.address || { country_code: (r?.address?.country_code || "").toLowerCase() },
+      }));
+    } catch {
+      raw = [];
+    }
+  }
+
+  if (raw.length) break;
+}
+    const filtered = raw.filter((r) => {
+      const cc = String(r?.address?.country_code || "").toLowerCase();
+      if (cc === "kr" || cc === "jp") return true;
+
+      // Some providers omit country_code; keep only points inside our KR/JP bounds.
+      const lat = Number(r?.lat);
+      const lng = Number(r?.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+      try {
+        return KJ_BOUNDS.contains(L.latLng(lat, lng));
+      } catch {
+        return false;
+      }
     });
-    const data = await res.json();
-    const results = (Array.isArray(data) ? data : []).map((r) => {
+
+    const results = filtered.map((r) => {
       const displayName = String(r.display_name || "");
-      const first = displayName.split(",")[0]?.trim() || displayName || q;
+      const first = displayName.split(",")[0]?.trim() || displayName || usedQuery;
       return {
         id: uid(),
         name: first,
         displayName,
         lat: Number(r.lat),
         lng: Number(r.lon),
+        countryCode: String(r?.address?.country_code || "").toLowerCase(),
       };
     });
-    setSearchResults(results);
+
+    const dedupedResults = [];
+    const seenSearchKeys = new Set();
+    for (const item of results) {
+      const key = [
+        Number(item.lat).toFixed(6),
+        Number(item.lng).toFixed(6),
+        String(item.name || "").trim(),
+        String(item.displayName || "").trim(),
+      ].join("|");
+      if (seenSearchKeys.has(key)) continue;
+      seenSearchKeys.add(key);
+      dedupedResults.push(item);
+    }
+
+    setSearchResults(dedupedResults);
     setRecentSearches((prev) => {
       const next = [q, ...prev.filter((x) => x !== q)];
       return next.slice(0, 5);
@@ -1117,29 +1069,25 @@ const pickSearchResult = (r) => {
   setFlyTarget([r.lat, r.lng]);
   setFlyZoom(17);
   setSearchFocus({ lat: r.lat, lng: r.lng, name: r.name || "" });
-  setPinDetailId(pinId);
-    setPinDetailOpen(true);
-    setSidebarOpen(false);
+  setSidebarOpen(false);
+};
+
+
+const openGoogleSearchFromQuery = () => {
+  const q = String(mapQuery || "").trim();
+  if (!q) return;
+  if (searchResults?.length) {
+    const first = searchResults[0];
+    setFlyTarget([first.lat, first.lng]);
+    setFlyZoom(17);
+    setSearchFocus({ lat: first.lat, lng: first.lng, name: first.name || "" });
+  }
+  openGoogleSearchQuery(q);
 };
 
 
 
-
-const clearMapSearchUI = () => {
-  setMapQuery("");
-  setSearchResults([]);
-  setSearchFocus(null);
-  setShowSearchPanel(false);
-};
-
-const focusMapSearchUI = () => {
-  setShowSearchPanel(true);
-};
   const [addCatOpen, setAddCatOpen] = useState(false);
-  const [moveThemeOpen, setMoveThemeOpen] = useState(false);
-  const [moveThemeFromCityId, setMoveThemeFromCityId] = useState("");
-  const [moveThemeId, setMoveThemeId] = useState("");
-
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [draftLatLng, setDraftLatLng] = useState(null);
   const [pinPrefill, setPinPrefill] = useState({ name: "", jpAddr: "", krAddr: "" });
@@ -1151,67 +1099,7 @@ const focusMapSearchUI = () => {
   const [addingPinMode, setAddingPinMode] = useState(false);
   const [searchFocus, setSearchFocus] = useState(null); // {lat,lng,name}
 
-  
-// ---- Remote sync (optional, login 없이 URL 해시로 식별) ----
-  const lastRemoteTs = useRef(0);
-useEffect(() => {
-  let alive = true;
-  if (!supabase) return;
-  (async () => {
-    try {
-      const { data, error } = await supabase.from("travel_maps").select("data").eq("id", syncId).maybeSingle();
-      if (error) throw error;
-      if (data?.data && alive) {
-        const r = data.data;
-        if (r.cities && r.themesByCity && r.pins) {
-            if (r.updatedAt) lastRemoteTs.current = Number(r.updatedAt) || 0;
-          setCities(r.cities);
-          setThemesByCity(r.themesByCity);
-          setPins(r.pins);
-          if (r.expandedCityIds) setExpandedCityIds(r.expandedCityIds);
-          if (r.selectedCityId !== undefined) setSelectedCityId(r.selectedCityId);
-          if (r.selectedThemeId !== undefined) setSelectedThemeId(r.selectedThemeId);
-        }
-      }
-    } catch (e) {
-      console.warn("remote load failed", e);
-    }
-  })();
-
-  const interval = setInterval(async () => {
-    try {
-      const { data } = await supabase.from("travel_maps").select("data").eq("id", syncId).maybeSingle();
-      const r = data?.data;
-      if (!r) return;
-      // pull-only if newer not tracked; 간단하게 마지막 상태를 덮어씁니다.
-      // (여러 기기에서 동시에 쓰는 경우를 위한 최소 동기화)
-    } catch {}
-  }, 8000);
-
-  return () => {
-    alive = false;
-    clearInterval(interval);
-  };
-}, [syncId]);
-
-const pushRemote = useRef(null);
-useEffect(() => {
-  if (!supabase) return;
-  if (pushRemote.current) clearTimeout(pushRemote.current);
-  pushRemote.current = setTimeout(async () => {
-    try {
-      const payload = { cities, themesByCity, pins, expandedCityIds, selectedCityId, selectedThemeId, updatedAt: Date.now() };
-      await supabase.from("travel_maps").upsert({ id: syncId, data: payload }, { onConflict: "id" });
-    } catch (e) {
-      console.warn("remote save failed", e);
-    }
-  }, 600);
-  return () => {
-    if (pushRemote.current) clearTimeout(pushRemote.current);
-  };
-}, [cities, themesByCity, pins, expandedCityIds, selectedCityId, selectedThemeId, syncId]);
-
-useEffect(() => {
+  useEffect(() => {
     saveState({
       cities,
       themesByCity,
@@ -1219,8 +1107,9 @@ useEffect(() => {
       expandedCityIds,
       selectedCityId,
       selectedThemeId,
+      recentSearches,
     });
-  }, [cities, themesByCity, pins, expandedCityIds, selectedCityId, selectedThemeId]);
+  }, [cities, themesByCity, pins, expandedCityIds, selectedCityId, selectedThemeId, recentSearches]);
 
   const toggleCityExpanded = (id) => {
     setExpandedCityIds((prev) =>
@@ -1283,40 +1172,10 @@ useEffect(() => {
   };
 
   const deleteTheme = (cityId, themeId) => {
-    if (!window.confirm("정말 삭제하십니까?")) return;
     if (!confirm("테마를 삭제할까요? (해당 테마의 핀도 같이 삭제됩니다)")) return;
     setThemesByCity((prev) => {
       const list = prev[cityId] || [];
       return { ...prev, [cityId]: list.filter((x) => x.id !== themeId) };
-
-const openMoveTheme = (fromCityId, themeId) => {
-  setMoveThemeFromCityId(fromCityId);
-  setMoveThemeId(themeId);
-  setMoveThemeOpen(true);
-};
-
-const moveThemeToCity = (toCityId) => {
-  const fromCityId = moveThemeFromCityId;
-  const themeId = moveThemeId;
-  if (!fromCityId || !themeId || !toCityId || fromCityId === toCityId) return;
-  setThemesByCity((prev) => {
-    const from = prev[fromCityId] || [];
-    const moving = from.find((t) => t.id === themeId);
-    if (!moving) return prev;
-    const to = prev[toCityId] || [];
-    return {
-      ...prev,
-      [fromCityId]: from.filter((t) => t.id !== themeId),
-      [toCityId]: [...to, moving],
-    };
-  });
-  // move pins under that theme too
-  setPins((prev) => prev.map((p) => (p.themeId === themeId ? { ...p, cityId: toCityId } : p)));
-  if (selectedCityId === fromCityId && selectedThemeId === themeId) {
-    setSelectedCityId(toCityId);
-  }
-};
-
     });
     setPins((p) => p.filter((pin) => pin.themeId !== themeId));
     if (selectedThemeId === themeId) setSelectedThemeId("");
@@ -1357,13 +1216,6 @@ setPinPrefill((p) => ({ ...p, krAddr: kr || p.krAddr, jpAddr: jp || p.jpAddr }))
       photos: data.photos || [],
       createdAt: Date.now(),
     };
-
-const updatePin = (pinId, patch) => {
-  setPins((prev) =>
-    prev.map((p) => (p.id === pinId ? { ...p, ...patch, updatedAt: Date.now() } : p))
-  );
-};
-
     setPins((prev) => [...prev, p]);
     setSelectedPinId(p.id);
     setFlyTarget([p.latlng.lat, p.latlng.lng]);
@@ -1371,7 +1223,6 @@ const updatePin = (pinId, patch) => {
   };
 
   const deletePin = (pinId) => {
-    if (!window.confirm("정말 삭제하십니까?")) return;
     setPins((p) => p.filter((x) => x.id !== pinId));
     if (selectedPinId === pinId) setSelectedPinId("");
   };
@@ -1383,8 +1234,6 @@ const updatePin = (pinId, patch) => {
     setSelectedPinId(pinId);
     setFlyTarget([p.latlng.lat, p.latlng.lng]);
     setFlyZoom(17);
-    setPinDetailId(pinId);
-    setPinDetailOpen(true);
     setSidebarOpen(false);
   };
 
@@ -1433,7 +1282,6 @@ const updatePin = (pinId, patch) => {
         onDeleteCity={deleteCity}
         onRenameTheme={renameTheme}
         onDeleteTheme={deleteTheme}
-          onMoveTheme={openMoveTheme}
         onOpenAddCategory={() => setAddCatOpen(true)}
         query={query}
         setQuery={setQuery}
@@ -1442,12 +1290,12 @@ const updatePin = (pinId, patch) => {
         onRunMapSearch={runMapSearch}
         searching={searching}
         searchResults={searchResults}
+        hasSearched={hasSearched}
         recentSearches={recentSearches}
         onPickSearchResult={pickSearchResult}
         onDeleteRecent={deleteRecentSearch}
-          onClearMapSearch={clearMapSearchUI}
-          onFocusMapSearch={focusMapSearchUI}
-          showSearchPanel={showSearchPanel}
+        onClearSearch={clearMapSearch}
+        onGoogleSearch={openGoogleSearchFromQuery}
       />
 
       <div className="mapWrap">
@@ -1464,8 +1312,9 @@ const updatePin = (pinId, patch) => {
         >
           <TileLayer
             url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-            maxNativeZoom={18}
             attribution="&copy; OpenStreetMap contributors"
+            maxNativeZoom={19}
+            maxZoom={19}
           />
 
           <FlyTo target={flyTarget} zoom={flyZoom} />
@@ -1490,7 +1339,7 @@ const updatePin = (pinId, patch) => {
                   <Popup>
                     <div style={{ fontWeight: 900 }}>{p.name || "(이름 없음)"}</div>
                     <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-                      {p.krAddr || p.jpAddr || ""}
+                      {p.krAddr || p.jpAddr || fmtLatLng(p.latlng.lat, p.latlng.lng)}
                     </div>
                   </Popup>
                 </Marker>
@@ -1506,31 +1355,12 @@ const updatePin = (pinId, patch) => {
           })}
 
 {searchFocus ? (
-  <>
-    <CircleMarker
-      center={[searchFocus.lat, searchFocus.lng]}
-      radius={10}
-      pathOptions={{ weight: 3, opacity: 1, fillOpacity: 0.15, color: "#111" }}
-    />
-    <Marker position={[searchFocus.lat, searchFocus.lng]} icon={iconBlue}>
-      <Popup>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 220 }}>
-          <div style={{ fontWeight: 700 }}>{searchFocus.name || "검색 위치"}</div>
-          <button
-            className="smallBtn"
-            onClick={() => {
-              openPinModalAt({ lat: searchFocus.lat, lng: searchFocus.lng });
-              setPinPrefill((p) => ({ ...p, name: searchFocus.name || p.name || "" }));
-            }}
-          >
-            이 위치 저장
-          </button>
-        </div>
-      </Popup>
-    </Marker>
-  </>
+  <CircleMarker
+    center={[searchFocus.lat, searchFocus.lng]}
+    radius={10}
+    pathOptions={{ weight: 3, opacity: 1, fillOpacity: 0.15, color: "#111" }}
+  />
 ) : null}
-
 
           {userLoc ? (
             <CircleMarker
@@ -1560,9 +1390,8 @@ const updatePin = (pinId, patch) => {
           <button
             className="fab"
             aria-label="핀 추가"
-            onClick={() => setAddingPinMode((p)=>!p)}
+            onClick={() => setAddingPinMode(true)}
             title="핀 추가"
-            className={addingPinMode ? "fab active" : "fab"}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
               <path
@@ -1614,20 +1443,6 @@ const updatePin = (pinId, patch) => {
             onClose={() => setPinModalOpen(false)}
           />
         ) : null}
-{pinDetailOpen && pinDetailId && pins.find((x) => x.id === pinDetailId) ? (
-  <PinDetailModal
-    pin={pins.find((x) => x.id === pinDetailId)}
-    cities={cities}
-    themesByCity={themesByCity}
-    onClose={() => {
-      setPinDetailOpen(false);
-      setPinDetailId("");
-    }}
-    onUpdate={updatePin}
-    onDelete={deletePin}
-  />
-) : null}
-
       </div>
     </div>
   );

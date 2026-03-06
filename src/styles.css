@@ -295,16 +295,27 @@ html,body{height:100%; margin:0; font-family:system-ui,-apple-system,Segoe UI,Ro
   border:1px solid var(--line);
   border-radius:999px;
   background:#fff;
-  font-weight:800;
+  font-size:12px;
+  font-weight:500;
   cursor:pointer;
 }
-.recentChip .x{
-  width:18px;height:18px;
-  display:flex;align-items:center;justify-content:center;
-  border-radius:999px;
-  border:1px solid var(--line);
-  background:#fff;
-  font-size:12px;
+.chipX{
+  border:none;
+  background:transparent;
+  color:var(--muted);
+  font-size:14px;
   line-height:1;
+  padding:0 2px;
+  cursor:pointer;
 }
-.recentChip .x:hover{ background:#f3f4f6; }
+.chipX:hover{ color:#111; }
+
+.recentChip 
+
+.emptyHint{
+  padding:10px 12px;
+  border:1px dashed rgba(0,0,0,0.15);
+  border-radius:10px;
+  font-size:13px;
+  color: rgba(0,0,0,0.65);
+}
